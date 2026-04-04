@@ -206,34 +206,22 @@ export default function Alerts() {
     toast.success("Marked as read");
   }, [readAlerts, saveAlertsState]);
 
-  const markAlertResolved = useCallback(async (id: number, switchToResolved = false) => {
-    try {
-      // Call the server to resolve the alert
-      await resolveMutation.mutateAsync({
-        id,
-        actionTaken: "Resolved via UI" // Default action taken
-      });
+const markAlertResolved = useCallback((id: number, switchToResolved = false) => {
+    // Update local state for immediate UI feedback (client-side only)
+    const newResolved = new Set(resolvedAlerts);
+    newResolved.add(id);
+    setResolvedAlerts(newResolved);
 
-      // Update local state for immediate UI feedback
-      const newResolved = new Set(resolvedAlerts);
-      newResolved.add(id);
-      setResolvedAlerts(newResolved);
-
-      if (switchToResolved) {
-        setActiveTab("resolved");
-      }
-
-      saveAlertsState();
-      toast.success("Marked as resolved");
-    } catch (error) {
-      console.error("Error resolving alert:", error);
-      toast.error("Failed to resolve alert");
+    if (switchToResolved) {
+      setActiveTab("resolved");
     }
-  }, [resolvedAlerts, saveAlertsState, resolveMutation]);
+
+    saveAlertsState();
+    toast.success("Marked as resolved (client-side)");
+  }, [resolvedAlerts, saveAlertsState]);
 
   useEffect(() => {
     saveAlertsState();
-    utils.alert.list.refetch();
   }, [readAlerts, resolvedAlerts]);
 
   const { data: rawAlerts, isLoading, refetch } = trpc.alert.list.useQuery({
@@ -258,31 +246,20 @@ export default function Alerts() {
     setShowResolveDialog(true);
   };
 
-  const submitResolve = useCallback(async () => {
+  const submitResolve = useCallback(() => {
     if (!selectedAlert || !actionTaken.trim()) return;
 
-    try {
-      // Call the server to resolve the alert
-      await resolveMutation.mutateAsync({
-        id: selectedAlert.id,
-        actionTaken: actionTaken.trim()
-      });
+    // Update local state for immediate UI feedback (client-side only)
+    const newResolved = new Set(resolvedAlerts);
+    newResolved.add(selectedAlert.id);
+    setResolvedAlerts(newResolved);
 
-      // Update local state for immediate UI feedback
-      const newResolved = new Set(resolvedAlerts);
-      newResolved.add(selectedAlert.id);
-      setResolvedAlerts(newResolved);
-
-      setActiveTab("resolved");
-      setShowResolveDialog(false);
-      setActionTaken("");
-      saveAlertsState();
-      toast.success("Marked as resolved");
-    } catch (error) {
-      console.error("Error resolving alert:", error);
-      toast.error("Failed to resolve alert");
-    }
-  }, [selectedAlert, actionTaken, resolvedAlerts, saveAlertsState, resolveMutation]);
+    setActiveTab("resolved");
+    setShowResolveDialog(false);
+    setActionTaken("");
+    saveAlertsState();
+    toast.success(`Marked as resolved: ${actionTaken.trim()} (client-side)`);
+  }, [selectedAlert, actionTaken, resolvedAlerts, saveAlertsState]);
 
   const filteredAlerts = alerts.filter((alert) => {
     const effectiveRead = getEffectiveIsRead(alert, readAlerts);
