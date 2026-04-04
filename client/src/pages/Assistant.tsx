@@ -156,6 +156,7 @@ export default function Assistant() {
 
   const handleSend = async () => {
     if (!input.trim()) return;
+    //handle
 
     const userMessage = input.trim();
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
