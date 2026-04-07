@@ -35,6 +35,8 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
+import { getStatusLabel, getStatusVariant, JDE_STATUS_MAP } from "../../../shared/jdeStatusMap";
+
 import {
   AlertTriangle,
   Brain,
@@ -48,46 +50,72 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
-function RiskBadge({ level }: { level: string }) {
+function RiskBadge({ level, delayProb }: { level?: string; delayProb?: number | string }) {
+  // Map backend riskLevel + delayProb to colors
+  let riskLevel = (level || "").toLowerCase() as "low" | "medium" | "high" | "critical" | "green" | "yellow" | "red";
+  const prob = Number(delayProb) || 0;
+  
+  if (prob > 70) riskLevel = "high";
+  else if (prob > 40) riskLevel = "medium";
+  
   const config = {
-    green: { label: "On Track", className: "risk-badge-green" },
-    yellow: { label: "At Risk", className: "risk-badge-yellow" },
-    red: { label: "Critical", className: "risk-badge-red" },
-  }[level] || { label: level, className: "risk-badge-green" };
-
-  return <span className={`risk-badge ${config.className}`}>{config.label}</span>;
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-    pending: { label: "Pending", variant: "outline" },
-    on_hold: { label: "On Hold", variant: "destructive" },
-    in_progress: { label: "In Progress", variant: "default" },
-    completed: { label: "Completed", variant: "secondary" },
-    cancelled: { label: "Cancelled", variant: "destructive" },
-    // JDE Status Codes
-    "100": { label: "Pending", variant: "outline" },
-    "110": { label: "Pending", variant: "outline" },
-    "120": { label: "Pending", variant: "outline" },
-    "130": { label: "Pending", variant: "outline" },
-    "215": { label: "Pending", variant: "outline" },
-    "160": { label: "On Hold", variant: "destructive" },
-    "180": { label: "In Progress", variant: "default" },
-    "220": { label: "In Progress", variant: "default" },
-    "230": { label: "In Progress", variant: "default" },
-    "240": { label: "In Progress", variant: "default" },
-    "250": { label: "In Progress", variant: "default" },
-    "280": { label: "In Progress", variant: "default" },
-    "380": { label: "In Progress", variant: "default" },
-    "400": { label: "Completed", variant: "secondary" },
-    "999": { label: "Cancelled", variant: "destructive" },
+    low: { label: "Low", className: "bg-green-100 text-green-800 border border-green-200 hover:bg-green-50" },
+    medium: { label: "Medium", className: "bg-yellow-100 text-yellow-800 border border-yellow-200 hover:bg-yellow-50" },
+    high: { label: "High", className: "bg-red-100 text-red-800 border border-red-200 hover:bg-red-50" },
+    critical: { label: "Critical", className: "bg-red-100 text-red-800 border border-red-200 hover:bg-red-50" },
+    green: { label: "Low", className: "bg-green-100 text-green-800 border border-green-200 hover:bg-green-50" },
+    yellow: { label: "Medium", className: "bg-yellow-100 text-yellow-800 border border-yellow-200 hover:bg-yellow-50" },
+    red: { label: "Critical", className: "bg-red-100 text-red-800 border border-red-200 hover:bg-red-50" },
   };
 
-  const statusConfig = config[status] || { label: status, variant: "secondary" as const };
+  const selectedConfig = config[riskLevel] || config.low;
+
+  return <Badge className={selectedConfig.className}>{selectedConfig.label}</Badge>;
+}
+
+function StatusBadge({ status, risk }: { status: string; risk?: string }) {
+  const label = getStatusLabel(status);
+  
+  const getStatusColor = (statusText: string): "green" | "yellow" | "red" => {
+    const code = parseInt(statusText);
+    
+    // JDE PO tiers
+    if (!isNaN(code)) {
+      if (code >= 400) return "red";
+      if (code >= 300) return "yellow"; 
+      if (code >= 100) return "green";
+    }
+    
+    const lowerStatus = statusText.toLowerCase().trim();
+    if (lowerStatus.includes("receipt") || lowerStatus.includes("complete") || lowerStatus.includes("cancel")) return "red";
+    if (lowerStatus.includes("print") || lowerStatus.includes("ship") || lowerStatus.includes("ack")) return "yellow";
+    return "green";
+  };
+
+  let baseColor = getStatusColor(status);
+  
+  const colorClasses: Record<"green" | "yellow" | "red", string> = {
+    green: "bg-green-100 text-green-800 border-green-300 hover:bg-green-100",
+    yellow: "bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-100", 
+    red: "bg-red-100 text-red-800 border-red-300 hover:bg-red-100",
+  };
+
+  // Risk override - string comparison
+  const riskLower = risk?.toLowerCase();
+  if (riskLower === "high" || riskLower === "critical" || riskLower === "red") {
+    baseColor = "red";
+  } else if (riskLower === "medium" || riskLower === "yellow") {
+    baseColor = "yellow";
+  }
+
+  const config = { 
+    label, 
+    className: colorClasses[baseColor as "green" | "yellow" | "red"] || colorClasses.green 
+  };
 
   return (
-    <Badge variant={statusConfig.variant} className="capitalize">
-      {statusConfig.label}
+    <Badge className={`border ${config.className} capitalize`}>
+      {config.label}
     </Badge>
   );
 }
@@ -210,13 +238,18 @@ export default function PurchaseOrders() {
                   <Filter className="mr-2 h-4 w-4" />
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="on_hold">On Hold</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectContent>
+                  <SelectItem key="all" value="all">All Statuses</SelectItem>
+                  {Object.entries(JDE_STATUS_MAP)
+                    .filter(([code]) => {
+                      const num = parseInt(code);
+                      return num >= 100 && num <= 499; // PO statuses only
+                    })
+                    .map(([code, label]) => (
+                      <SelectItem key={code} value={code}>
+                        {label}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -271,7 +304,7 @@ export default function PurchaseOrders() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={po.status} />
+                        <StatusBadge status={po.status} risk={po.riskLevel} />
                       </TableCell>
                       <TableCell>
                         <span
@@ -286,8 +319,8 @@ export default function PurchaseOrders() {
                           {Number(po.delayProbability || 0).toFixed(0)}%
                         </span>
                       </TableCell>
-                      <TableCell>
-                        <RiskBadge level={po.riskLevel || "green"} />
+<TableCell>
+                        <RiskBadge level={po.riskLevel} delayProb={po.delayProbability} />
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
@@ -453,4 +486,3 @@ export default function PurchaseOrders() {
     </DashboardLayout>
   );
 }
-

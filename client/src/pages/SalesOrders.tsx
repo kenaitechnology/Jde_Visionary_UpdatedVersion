@@ -44,107 +44,18 @@ function RiskBadge({ level }: { level: string }) {
 }
 
 function StatusBadge({ status, risk }: { status: string; risk?: string }) {
-  // JDE Sales Order Status Codes mapping
+  // JDE Sales Order Status Codes (exact document flow)
   const statusConfig: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-    // Pending Orders (527-545)
-    "527": { label: "Pending", variant: "outline" },
-    "528": { label: "Pending", variant: "outline" },
-    "529": { label: "Pending", variant: "outline" },
-    "530": { label: "Pending", variant: "outline" },
-    "531": { label: "Pending", variant: "outline" },
-    "532": { label: "Pending", variant: "outline" },
-    "533": { label: "Pending", variant: "outline" },
-    "534": { label: "Pending", variant: "outline" },
-    "535": { label: "Pending", variant: "outline" },
-    "536": { label: "Pending", variant: "outline" },
-    "537": { label: "Pending", variant: "outline" },
-    "538": { label: "Pending", variant: "outline" },
-    "539": { label: "Pending", variant: "outline" },
-    "540": { label: "Pick Pending", variant: "outline" },
-    "541": { label: "Pick Pending", variant: "outline" },
-    "542": { label: "Pick Pending", variant: "outline" },
-    "543": { label: "Pick Pending", variant: "outline" },
-    "544": { label: "Pick Pending", variant: "outline" },
-    "545": { label: "Picking in Progress", variant: "default" },
-    // Orders In Progress (550-578)
-    "550": { label: "Pick Confirmed", variant: "default" },
-    "551": { label: "Pick Confirmed", variant: "default" },
-    "552": { label: "Pick Confirmed", variant: "default" },
-    "553": { label: "Pick Confirmed", variant: "default" },
-    "554": { label: "Pick Confirmed", variant: "default" },
-    "555": { label: "Pick Confirmed", variant: "default" },
-    "556": { label: "Pick Confirmed", variant: "default" },
-    "557": { label: "Pick Confirmed", variant: "default" },
-    "558": { label: "Pick Confirmed", variant: "default" },
-    "559": { label: "Pick Confirmed", variant: "default" },
-    "560": { label: "Shipment Pending", variant: "default" },
-    "561": { label: "Shipment Pending", variant: "default" },
-    "562": { label: "Shipment Pending", variant: "default" },
-    "563": { label: "Shipment Pending", variant: "default" },
-    "564": { label: "Shipment Pending", variant: "default" },
-    "565": { label: "Shipment Pending", variant: "default" },
-    "566": { label: "Shipment Pending", variant: "default" },
-    "567": { label: "Shipment Pending", variant: "default" },
-    "568": { label: "Shipment Pending", variant: "default" },
-    "569": { label: "Shipment Pending", variant: "default" },
-    "570": { label: "Shipment Pending", variant: "default" },
-    "571": { label: "Shipment Pending", variant: "default" },
-    "572": { label: "Shipment Pending", variant: "default" },
-    "573": { label: "Shipment Processing", variant: "default" },
-    "574": { label: "Shipment Processing", variant: "default" },
-    "575": { label: "Shipment Confirmed", variant: "default" },
-    "576": { label: "Shipment Confirmed", variant: "default" },
-    "577": { label: "Shipment Confirmed", variant: "default" },
-    "578": { label: "In Transit", variant: "default" },
-    // Shipped/Billing Stage (580-620)
-    "580": { label: "Delivered", variant: "secondary" },
-    "581": { label: "Delivered", variant: "secondary" },
-    "582": { label: "Delivered", variant: "secondary" },
-    "583": { label: "Delivered", variant: "secondary" },
-    "584": { label: "Delivered", variant: "secondary" },
-    "585": { label: "Delivered", variant: "secondary" },
-    "586": { label: "Delivered", variant: "secondary" },
-    "587": { label: "Delivered", variant: "secondary" },
-    "588": { label: "Delivered", variant: "secondary" },
-    "589": { label: "Delivered", variant: "secondary" },
-    "590": { label: "Delivered", variant: "secondary" },
-    "591": { label: "Delivered", variant: "secondary" },
-    "592": { label: "Delivered", variant: "secondary" },
-    "593": { label: "Delivered", variant: "secondary" },
-    "594": { label: "Delivered", variant: "secondary" },
-    "595": { label: "Delivered", variant: "secondary" },
-    "596": { label: "Delivered", variant: "secondary" },
-    "597": { label: "Delivered", variant: "secondary" },
-    "598": { label: "Delivered", variant: "secondary" },
-    "599": { label: "Delivered", variant: "secondary" },
-    "600": { label: "Delivered", variant: "secondary" },
-    "601": { label: "Delivered", variant: "secondary" },
-    "602": { label: "Delivered", variant: "secondary" },
-    "603": { label: "Delivered", variant: "secondary" },
-    "604": { label: "Delivered", variant: "secondary" },
-    "605": { label: "Delivered", variant: "secondary" },
-    "606": { label: "Delivered", variant: "secondary" },
-    "607": { label: "Delivered", variant: "secondary" },
-    "608": { label: "Delivered", variant: "secondary" },
-    "609": { label: "Delivered", variant: "secondary" },
-    "610": { label: "Delivered", variant: "secondary" },
-    "611": { label: "Delivered", variant: "secondary" },
-    "612": { label: "Delivered", variant: "secondary" },
-    "613": { label: "Delivered", variant: "secondary" },
-    "614": { label: "Delivered", variant: "secondary" },
-    "615": { label: "Delivered", variant: "secondary" },
-    "616": { label: "Delivered", variant: "secondary" },
-    "617": { label: "Delivered", variant: "secondary" },
-    "618": { label: "Delivered", variant: "secondary" },
-    "619": { label: "Delivered", variant: "secondary" },
-    "620": { label: "Invoiced", variant: "secondary" },
-    // Completed/Closed
-    "999": { label: "Closed", variant: "destructive" },
-    // Text-based status mappings
+    "520": { label: "Enter Order/Receive EDI", variant: "outline" },
+    "540": { label: "Print Pick", variant: "outline" },
+    "560": { label: "Ship Confirmation", variant: "default" },
+    "580": { label: "Print Invoices", variant: "default" },
+    "600": { label: "Invoice Journal", variant: "secondary" },
+    "620": { label: "Sales Update", variant: "secondary" },
+    "999": { label: "Complete - Ready to Purge", variant: "destructive" },
+    // Text fallbacks
     "Pending": { label: "Pending", variant: "outline" },
-    "In Progress": { label: "In Progress", variant: "default" },
-    "Shipped/Billing": { label: "Shipped/Billing", variant: "default" },
-    "Completed": { label: "Completed", variant: "secondary" },
+    "Unknown": { label: "Unknown", variant: "outline" },
   };
 
   // Determine color based on risk level
@@ -311,10 +222,13 @@ export default function SalesOrders() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="shipped_billing">Shipped/Billing</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="enter_order">Enter Order/Receive EDI</SelectItem>
+                  <SelectItem value="print_pick">Print Pick</SelectItem>
+                  <SelectItem value="ship_confirm">Ship Confirmation</SelectItem>
+                  <SelectItem value="print_invoice">Print Invoices</SelectItem>
+                  <SelectItem value="invoice_journal">Invoice Journal</SelectItem>
+                  <SelectItem value="sales_update">Sales Update</SelectItem>
+                  <SelectItem value="complete">Complete - Ready to Purge</SelectItem>
                 </SelectContent>
               </Select>
             </div>

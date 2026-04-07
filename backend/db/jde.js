@@ -287,14 +287,13 @@ async function getJDEPurchaseOrders() {
       `);
 
     return result.recordset.map(row => {
-      const mappedStatus = mapJDEStatus(row.status);
-      const riskData = calculateJDEPORisk(mappedStatus, row.requestedDeliveryDate);
+      const riskData = calculateJDEPORisk(row.status, row.requestedDeliveryDate);
       return {
         poNumber: row.poNumber || "",
         supplierName: row.supplierName || "Unknown",
         orderDate: convertJDEJulianDate(row.orderDate),
         requestedDeliveryDate: convertJDEJulianDate(row.requestedDeliveryDate),
-        status: mappedStatus,
+        status: row.status,
         riskLevel: riskData.riskLevel,
         delayProbability: riskData.delayProbability
       };
@@ -310,28 +309,36 @@ async function getJDESalesOrders() {
     const pool = await getPool();
     const result = await pool.request()
       .query(`
-        SELECT TOP 100 
-          DOC as soNumber,
-          AN8 as customerId,
-          TRDJ as requestedShipDate,
+        SELECT TOP 100
+          RTRIM(CONVERT(VARCHAR, F4201.DOC)) AS soNumber,
+          F4201.AN8 AS customerId,
           CASE 
-            WHEN RAND() * 100 < 15 THEN 'red'
-            WHEN RAND() * 100 < 40 THEN 'yellow'
-            ELSE 'green'
-          END as fulfillmentRisk,
-          CASE 
-            WHEN RAND() * 100 < 20 THEN 'Pending'
-            WHEN RAND() * 100 < 50 THEN 'In Progress'
-            WHEN RAND() * 100 < 80 THEN 'Shipped/Billing'
-            ELSE 'Completed'
-          END as status,
-          CASE WHEN RAND() * 100 < 50 THEN 'Acme Corp' ELSE 'Tech Ltd' END as customerName,
-          RAND() * 100000 as totalAmount,
-          CASE WHEN RAND() * 100 < 30 THEN 'high' ELSE 'medium' END as priority
-        FROM F4201 
-        ORDER BY TRDJ DESC
+            WHEN F4201.TRDJ IS NOT NULL AND F4201.TRDJ > 0 THEN 
+              CONVERT(VARCHAR, CAST(F4201.TRDJ AS INT))
+            ELSE ''
+          END AS requestedShipDate,
+          RTRIM(ISNULL(F4211.PDNXTR, '')) AS rawStatus,
+          RTRIM(ISNULL(F0101.ABALPH, 'Unknown Customer')) AS customerName
+        FROM dbo.F4201 F4201
+        LEFT JOIN dbo.F4211 F4211 ON F4201.DOCO = F4211.DOCO AND F4201.DCTO = F4211.DCTO AND F4201.LNID = F4211.LNID
+        LEFT JOIN dbo.F0101 F0101 ON F4201.AN8 = F0101.ABAN8
+        ORDER BY F4201.TRDJ DESC
       `);
-    return result.recordset;
+
+    return result.recordset.map(row => {
+      const mappedStatus = mapJDEStatus(row.rawStatus);
+      const riskData = { riskLevel: 'green', fulfillmentRisk: 'green' }; // Simplified; extend calculateJDESORisk if needed
+      return {
+        soNumber: row.soNumber || "",
+        customerId: row.customerId || "",
+        customerName: row.customerName || "Unknown",
+        requestedShipDate: convertJDEJulianDate(row.requestedShipDate),
+        status: mappedStatus,
+        fulfillmentRisk: riskData.fulfillmentRisk || 'green',
+        totalAmount: 0, // Add SUM(ITAM) or similar if needed from F4211
+        priority: 'medium' // Extend logic if needed
+      };
+    });
   } catch (err) {
     console.error('JDE SO query error:', err);
     return [];
@@ -406,14 +413,13 @@ async function getJDEPurchaseOrderById(poNumber) {
     if (result.recordset.length === 0) return null;
 
     const row = result.recordset[0];
-    const mappedStatus = mapJDEStatus(row.status);
-    const riskData = calculateJDEPORisk(mappedStatus, row.requestedDeliveryDate);
+    const riskData = calculateJDEPORisk(row.status, row.requestedDeliveryDate);
     return {
       poNumber: row.poNumber || "",
       supplierName: row.supplierName || "Unknown",
       orderDate: convertJDEJulianDate(row.orderDate),
       requestedDeliveryDate: convertJDEJulianDate(row.requestedDeliveryDate),
-      status: mappedStatus,
+      status: row.status,
       riskLevel: riskData.riskLevel,
       delayProbability: riskData.delayProbability
     };
@@ -446,14 +452,16 @@ function convertJDEJulianDate(julianDate) {
 
 function mapJDEStatus(nxtStatus) {
   const statusMap = {
-    "100": "Pending", "110": "Pending", "120": "Pending", "130": "Pending", "215": "Pending",
-    "160": "On Hold",
-    "180": "In Progress", "220": "In Progress", "230": "In Progress", "240": "In Progress",
-    "250": "In Progress", "280": "In Progress", "380": "In Progress",
-    "400": "Completed", "999": "Cancelled",
-    "": "Pending"
+    "520": "Enter Order/Receive EDI Order",
+    "540": "Print Pick", 
+    "560": "Ship Confirmation",
+    "580": "Print Invoices",
+    "600": "Invoice Journal",
+    "620": "Sales Update",
+    "999": "Complete - Ready to Purge",
+    "": "Unknown"
   };
-  return statusMap[nxtStatus ? nxtStatus.trim() : ""] || "Pending";
+  return statusMap[nxtStatus ? nxtStatus.trim() : ""] || nxtStatus || "Unknown";
 }
 
 function calculateJDEPORisk(status, deliveryDate) {
@@ -483,5 +491,3 @@ module.exports = {
   getJDEShipments,
   getJDEInventoryItemByCode
 };
-
-

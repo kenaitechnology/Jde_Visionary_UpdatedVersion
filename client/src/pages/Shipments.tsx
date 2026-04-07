@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { trpc } from "@/lib/trpc";
+import { getStatusLabel, getStatusVariant, JDE_STATUS_MAP } from "../../../shared/jdeStatusMap";
 import { format } from "date-fns";
 import {
   AlertTriangle,
@@ -38,43 +39,48 @@ function RiskBadge({ level }: { level: string }) {
   const config = {
     green: { label: "On Track", className: "risk-badge-green" },
     yellow: { label: "At Risk", className: "risk-badge-yellow" },
-    red: { label: "Delayed", className: "risk-badge-red" },
+    red: { label: "Critical", className: "risk-badge-red" },
   }[level] || { label: level, className: "risk-badge-green" };
 
   return <span className={`risk-badge ${config.className}`}>{config.label}</span>;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { variant: "default" | "secondary" | "outline" | "destructive" }> = {
-    pending: { variant: "outline" },
-    picked_up: { variant: "secondary" },
-    in_transit: { variant: "default" },
-    out_for_delivery: { variant: "default" },
-    delivered: { variant: "secondary" },
-    delayed: { variant: "destructive" },
-    exception: { variant: "destructive" },
-    "Pending": { variant: "outline" },
-    "Picked Up": { variant: "secondary" },
-    "In Transit": { variant: "default" },
-    "Arrived": { variant: "default" },
-    "Out for Delivery": { variant: "default" },
-    "Delivered": { variant: "secondary" },
-    "Completed": { variant: "secondary" },
-    "Cancelled": { variant: "destructive" },
-    // JDE Status Codes
-    "420": { variant: "outline" },
-    "430": { variant: "secondary" },
-    "440": { variant: "default" },
-    "450": { variant: "default" },
-    "460": { variant: "default" },
-    "470": { variant: "secondary" },
-    "480": { variant: "secondary" },
-    "999": { variant: "destructive" },
+function StatusBadge({ status, risk }: { status: string; risk?: string }) {
+  const label = getStatusLabel(status);
+  
+  const getStatusColor = (statusText: string): "green" | "yellow" | "red" => {
+    const code = parseInt(statusText);
+    
+    if (!isNaN(code)) {
+      if (code >= 550) return "green";
+      if (code >= 500) return "yellow";
+      return "green";
+    }
+    
+    const lowerStatus = statusText.toLowerCase().trim();
+    if (lowerStatus.includes("delivered") || lowerStatus.includes("complete")) return "green";
+    if (lowerStatus.includes("transit") || lowerStatus.includes("ship")) return "yellow";
+    return "green";
   };
 
+  let baseColor = getStatusColor(status);
+  
+  const colorClasses: Record<"green" | "yellow" | "red", string> = {
+    green: "bg-green-100 text-green-800 border-green-300 hover:bg-green-100",
+    yellow: "bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-100",
+    red: "bg-red-100 text-red-800 border-red-300 hover:bg-red-100",
+  };
+
+  // Risk override
+  const riskLower = risk?.toLowerCase();
+  if (riskLower === "high" || riskLower === "critical" || riskLower === "red") baseColor = "red";
+  else if (riskLower === "medium" || riskLower === "yellow") baseColor = "yellow";
+
+  const config = { label, className: colorClasses[baseColor as keyof typeof colorClasses] || colorClasses.green };
+
   return (
-    <Badge variant={config[status]?.variant || "secondary"} className="capitalize">
-      {status.replace(/_/g, " ")}
+    <Badge className={`border ${config.className} capitalize`}>
+      {config.label}
     </Badge>
   );
 }
@@ -193,12 +199,16 @@ export default function Shipments() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="picked_up">Picked Up</SelectItem>
-                  <SelectItem value="in_transit">In Transit</SelectItem>
-                  <SelectItem value="out_for_delivery">Out for Delivery</SelectItem>
-                  <SelectItem value="delivered">Delivered</SelectItem>
-                  <SelectItem value="delayed">Delayed</SelectItem>
+                  {Object.entries(JDE_STATUS_MAP)
+                    .filter(([code]) => {
+                      const num = parseInt(code);
+                      return num >= 400 && num <= 600; // Shipment statuses
+                    })
+                    .map(([code, label]) => (
+                      <SelectItem key={code} value={code}>
+                        {label}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               <Select value={riskFilter} onValueChange={setRiskFilter}>
@@ -284,7 +294,7 @@ export default function Shipments() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <StatusBadge status={shipment.status} />
+                        <StatusBadge status={shipment.status} risk={shipment.riskLevel} />
                       </TableCell>
                       <TableCell>
                         <RiskBadge level={shipment.riskLevel} />

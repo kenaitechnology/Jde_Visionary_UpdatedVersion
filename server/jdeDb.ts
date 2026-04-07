@@ -1,4 +1,5 @@
 import sql from "mssql";
+import { JDE_STATUS_MAP } from "../shared/jdeStatusMap";
 import { ENV } from "./_core/env";
 
 export interface JDEEnv {
@@ -282,16 +283,20 @@ export async function getJDEPurchaseOrders(): Promise<JDEPurchaseOrder[]> {
 
   try {
     const rows = await executeQuery<any>(query);
+
+    console.log("[JDE RAW DATA]:", rows);
     
     return rows.map((row: any) => {
       const mappedStatus = mapJDEStatus(row.status);
-      const riskData = calculateJDEPORisk(row.status, row.requestedDeliveryDate);
+      const requestedDate = convertJDEJulianDate(row.requestedDeliveryDate);
+      const parsedDate = requestedDate ? new Date(requestedDate) : null;
+      const riskData = calculateJDEPORisk(row.status, parsedDate);
       
       return {
         poNumber: row.poNumber || "",
         supplierName: row.supplierName || "Unknown Supplier",
         orderDate: convertJEDate(row.orderDate),
-        requestedDeliveryDate: convertJEDate(row.requestedDeliveryDate),
+        requestedDeliveryDate: requestedDate,
         status: mappedStatus,
         riskLevel: riskData.riskLevel,
         delayProbability: riskData.delayProbability,
@@ -305,97 +310,109 @@ export async function getJDEPurchaseOrders(): Promise<JDEPurchaseOrder[]> {
 
 function mapJDEStatus(nxtStatus: string): string {
   const statusMap: Record<string, string> = {
-    "100": "Pending",
-    "110": "Pending",
-    "120": "Pending",
-    "130": "Pending",
-    "215": "Pending",
-    "160": "On Hold",
-    "180": "In Progress",
-    "220": "In Progress",
-    "230": "In Progress",
-    "240": "In Progress",
-    "250": "In Progress",
-    "280": "In Progress",
-    "380": "In Progress",
-    "400": "Completed",
-    "999": "Cancelled",
-    "": "Pending",
+      "05": "PRP Order, Pre-Quote Accept",
+    "1": "Purchasing Activities",
+    "100": "Enter Purchase Requisition",
+    "110": "Approved/MRP Requisition",
+    "120": "Print Purchase Requisition",
+    "130": "Generate PO from Requisition",
+    "132": "SDS Req to Whse",
+    "134": "SDS Req to PO",
+    "140": "Enter Request for Bid/Quote",
+    "160": "Print Request for Bid/Quote",
+    "161": "Send EDI Request for Quote",
+    "180": "Enter Supplier Bid",
+    "200": "Print Bid/Quote Confirmation",
+    "210": "Enter Blanket Purchase Order",
+    "215": "Release Blanket Order",
+    "216": "Preliminary Order Created",
+    "220": "Enter Purchase Order",
+    "225": "Rejected Order",
+    "230": "Approval Process",
+    "240": "Print Purchase Order Proof",
+    "245": "Awaiting Acknowledgement",
+    "250": "Approve Shipment/Load",
+    "260": "Approve Purchase Order Proof",
+    "280": "Print Purchase Order",
+    "281": "Send EDI Purchase Order",
+    "282": "Receive EDI PO Acknowledgment",
+    "300": "Record Supplier Acknowledgement",
+    "320": "Enter Change Order",
+    "325": "Order Revised by Ack.",
+    "340": "Approve Change Order",
+    "360": "Print Change Order",
+    "361": "Send EDI Purchase Order Change",
+    "362": "Receive EDI Change Ack.",
+    "370": "Record Supplier Shipment",
+    "380": "Print Purchase Receiver",
+    "381": "Application Certificate",
+    "400": "Record Purchase Receipt",
+    "410": "Back Ordered",
+    "420": "Release from Inspection",
+    "425": "Freight, Insurance & Expenses Brazil Purchasing",
+    "430": "Close Nota Fiscal Brazil Purchasing",
+    "440": "Record Matching Voucher",
+    "499": "Canceled Line",
   };
   
   const trimmed = nxtStatus?.trim() || "";
   return statusMap[trimmed] || "Pending";
 }
 
-function calculateJDEPORisk(status: string, deliveryDate: string): { riskLevel: string; delayProbability: number } {
-  if (status === "400" || status === "Completed") {
-    return { riskLevel: "green", delayProbability: 5 };
+function calculateJDEPORisk(status: string, requestedDate: Date | null): { riskLevel: string; delayProbability: number } {
+  if (!requestedDate) {
+    return { riskLevel: "Unknown", delayProbability: 0 };
   }
-  
-  if (status === "999" || status === "Cancelled") {
-    return { riskLevel: "green", delayProbability: 5 };
+
+  const today = new Date();
+
+  // ---- STEP 1: Time factor ----
+  const msPerDay = 1000 * 60 * 60 * 24;
+  const daysDiff = (requestedDate.getTime() - today.getTime()) / msPerDay;
+
+  // configurable windows (NOT hardcoded logic, just scaling factors)
+  const maxFutureWindow = 30;  // how far future we normalize
+  const maxDelayWindow = 30;   // how far delay we normalize
+
+  let timeScore;
+
+  if (daysDiff >= 0) {
+    timeScore = 1 - (daysDiff / maxFutureWindow);
+  } else {
+    timeScore = 1 + (Math.abs(daysDiff) / maxDelayWindow);
   }
-  
-  if (status === "160" || status === "On Hold") {
-    return { riskLevel: "yellow", delayProbability: 40 };
-  }
-  
-  if (deliveryDate) {
-    try {
-      let year: number, month: number, day: number;
-      const dateStr = deliveryDate.toString();
-      
-      if (dateStr.length === 6) {
-        const c = parseInt(dateStr.charAt(0));
-        const yy = parseInt(dateStr.substring(1, 3));
-        const ddd = parseInt(dateStr.substring(3, 6));
-        year = (c * 100) + 1900 + yy;
-        const dateObj = new Date(year, 0, 1);
-        dateObj.setDate(dateObj.getDate() + (ddd - 1));
-        month = dateObj.getMonth();
-        day = dateObj.getDate();
-      } else if (dateStr.includes("-")) {
-        const parts = dateStr.split("-");
-        year = parseInt(parts[0]);
-        month = parseInt(parts[1]) - 1;
-        day = parseInt(parts[2]);
-      } else if (dateStr.length === 7) {
-        const century = parseInt(dateStr.charAt(0));
-        year = century === 0 ? 2000 + parseInt(dateStr.substring(1, 3)) : 1900 + parseInt(dateStr.substring(1, 3));
-        month = parseInt(dateStr.substring(3, 5)) - 1;
-        day = parseInt(dateStr.substring(5, 7));
-      } else if (dateStr.length === 8) {
-        year = parseInt(dateStr.substring(0, 4));
-        month = parseInt(dateStr.substring(4, 6)) - 1;
-        day = parseInt(dateStr.substring(6, 8));
-      } else {
-        return { riskLevel: "yellow", delayProbability: 35 };
-      }
-      
-      const deliveryDateObj = new Date(year, month, day);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const daysUntilDelivery = Math.ceil((deliveryDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (daysUntilDelivery < 0) {
-        return { riskLevel: "red", delayProbability: 85 };
-      } else if (daysUntilDelivery <= 3) {
-        return { riskLevel: "red", delayProbability: 75 };
-      } else if (daysUntilDelivery <= 7) {
-        return { riskLevel: "yellow", delayProbability: 50 };
-      } else if (daysUntilDelivery <= 14) {
-        return { riskLevel: "yellow", delayProbability: 30 };
-      } else {
-        return { riskLevel: "green", delayProbability: 15 };
-      }
-    } catch (e) {
-      console.warn("[JDE Database] Error parsing delivery date:", e);
-      return { riskLevel: "yellow", delayProbability: 35 };
-    }
-  }
-  
-  return { riskLevel: "yellow", delayProbability: 35 };
+
+  // normalize between 0–1
+  timeScore = Math.max(0, Math.min(1, timeScore));
+
+  // ---- STEP 2: Status factor ----
+  const statusNum = parseFloat(status || "0");
+
+  const minStatus = 0;
+  const maxStatus = 400; // configurable (JDE completion)
+
+  const progress = (statusNum - minStatus) / (maxStatus - minStatus);
+  const statusScore = 1 - Math.max(0, Math.min(1, progress));
+
+  // ---- STEP 3: Weighted combination ----
+  const w1 = 0.6; // time weight
+  const w2 = 0.4; // status weight
+
+  let delayProbability = (w1 * timeScore) + (w2 * statusScore);
+
+  // clamp
+  delayProbability = Math.max(0, Math.min(1, delayProbability));
+
+  // ---- STEP 4: Derive risk level (not hardcoded, threshold-based) ----
+  let riskLevel = "Low";
+
+  if (delayProbability > 0.75) riskLevel = "High";
+  else if (delayProbability > 0.4) riskLevel = "Medium";
+
+  return {
+    riskLevel,
+    delayProbability: Number(delayProbability.toFixed(2)) * 100  // Convert to %
+  };
 }
 
 export async function getJDEPurchaseOrderById(poNumber: string): Promise<JDEPurchaseOrder | null> {
@@ -437,13 +454,15 @@ export async function getJDEPurchaseOrderById(poNumber: string): Promise<JDEPurc
 
     const row = rows[0];
     const mappedStatus = mapJDEStatus(row.status);
-    const riskData = calculateJDEPORisk(row.status, row.requestedDeliveryDate);
+    const requestedDate = convertJDEJulianDate(row.requestedDeliveryDate);
+    const parsedDate = requestedDate ? new Date(requestedDate) : null;
+    const riskData = calculateJDEPORisk(row.status, parsedDate);
     
     return {
       poNumber: row.poNumber || "",
       supplierName: row.supplierName || "Unknown Supplier",
       orderDate: convertJEDate(row.orderDate),
-      requestedDeliveryDate: convertJEDate(row.requestedDeliveryDate),
+      requestedDeliveryDate: requestedDate,
       status: mappedStatus,
       riskLevel: riskData.riskLevel,
       delayProbability: riskData.delayProbability,
@@ -504,20 +523,20 @@ export async function getJDESalesOrders(): Promise<JDESalesOrder[]> {
   try {
     const rows = await executeQuery<any>(query);
     
-    return rows.map((row: any) => ({
-      soNumber: row.soNumber || "",
-      customerName: row.customerName || "Unknown Customer",
-      itemNumber: row.itemNumber || "",
-      secondItemNumber: row.secondItemNumber || "",
-      thirdItemNumber: row.thirdItemNumber || "",
-      quantity: Number(row.quantity) || 0,
-      unitPrice: Number(row.unitPrice) || 0,
-      totalAmount: Number(row.totalAmount) || 0,
-      requestedShipDate: convertJEDate(row.requestedShipDate),
-      status: mapJDESOStatus(row.status),
-      priority: mapJDESOPriority(row.priority),
-      fulfillmentRisk: calculateJDESORisk(row.status, row.requestedShipDate),
-    }));
+      return rows.map((row: any) => ({
+        soNumber: row.soNumber || "",
+        customerName: row.customerName || "Unknown Customer",
+        itemNumber: row.itemNumber || "",
+        secondItemNumber: row.secondItemNumber || "",
+        thirdItemNumber: row.thirdItemNumber || "",
+        quantity: Number(row.quantity) || 0,
+        unitPrice: Number(row.unitPrice) || 0,
+        totalAmount: Number(row.totalAmount) || 0,
+        requestedShipDate: convertJEDate(row.requestedShipDate),
+        status: mapJDESOStatus(row.status),
+        priority: mapJDESOPriority(row.priority),
+        fulfillmentRisk: calculateJDESORisk(row.status, row.requestedShipDate, Number(row.totalAmount) || 0, Number(row.quantity) || 0),
+      }));
   } catch (error) {
     console.error("[JDE Database] Error fetching sales orders:", error);
     return [];
@@ -525,107 +544,175 @@ export async function getJDESalesOrders(): Promise<JDESalesOrder[]> {
 }
 
 function mapJDESOStatus(nxtStatus: string): string {
-  const statusCode = parseInt(nxtStatus?.trim() || "0", 10);
-  
-  if (statusCode >= 527 && statusCode <= 545) {
-    return "Pending";
-  }
-  
-  if (statusCode >= 550 && statusCode <= 578) {
-    return "In Progress";
-  }
-  
-  if (statusCode >= 580 && statusCode <= 620) {
-    return "Shipped/Billing";
-  }
-  
-  if (statusCode === 999) {
-    return "Completed";
-  }
-  
-  if (!nxtStatus || nxtStatus.trim() === "") {
-    return "Pending";
-  }
-  
-  return nxtStatus.trim();
+  const code = nxtStatus?.trim() || "";
+
+  const statusMap: Record<string, string> = {
+    "500": "Enter Quote/Blanket Order",
+    "515": "Release Quote/Blanket to Order",
+    "520": "Enter Order/Receive EDI Order",
+    "521": "Review EDI/Uploaded Order",
+    "522": "Correct EDI Order",
+    "523": "Send EDI Change Acknowledgement",
+    "524": "In Fulfillment",
+    "525": "Print Acknowledgement / Send EDI",
+    "527": "Approve Shipment/Load",
+    "530": "Work Order Created",
+    "535": "In Warehouse",
+    "536": "Approve Shipment",
+    "537": "Print Control Pick",
+    "540": "Print Pick",
+    "542": "Print Loading Note ECS",
+    "545": "Pick Confirmation",
+    "550": "Print Shipping Documents",
+    "555": "Pack Confirmation",
+    "559": "Waiting Purchase Order Receipt",
+    "560": "Ship Confirmation",
+    "561": "Send EDI Response to RFQ",
+    "562": "Print Packing List/Invoice",
+    "563": "Print Packing List/Invoice",
+    "564": "Delivery Document Selection ECS",
+    "565": "Print Delivery Notes",
+    "570": "Print Bill of Lading",
+    "571": "Send EDI Advanced Ship Notice",
+    "572": "Receive EDI Receiving Advice",
+    "573": "Delivery Confirm ECS",
+    "574": "Normal Generate XML Brazil",
+    "575": "Cycle Billing",
+    "576": "Send EDI Advanced Ship Notice",
+    "577": "Receive EDI Receiving Advice",
+    "578": "EDI Receiving Advice Reject",
+    "579": "Pending Revenue Recognition",
+    "580": "Print Invoices",
+    "581": "Send EDI Invoice",
+    "585": "Print Interbranch Invoice",
+    "590": "Print Pre-Invoice Proof",
+    "595": "Generate Nota Fiscal Brazil Sales",
+    "597": "Freight, Insurance & Expenses Brazil Sales",
+    "598": "Print Nota Fiscal Brazil Sales",
+    "600": "Invoice Journal",
+    "610": "Print G/L Sales Recap-Detail",
+    "615": "Print G/L Sales Recap-Summary",
+    "617": "Generate Tax Lines Brazil Sales",
+    "620": "Sales Update",
+    "625": "End of Month Repricing ECS",
+    "800": "Direct Ship Acknowledgement",
+    "810": "Print Sales Invoice",
+    "831": "Invoice Error Argentina",
+    "832": "Shipment Note Error Argentina",
+
+    "900": "Backorder in S/O Entry",
+    "902": "Backorder in Commitments",
+    "904": "Backorder in Ship Confirmation",
+    "909": "Backorder in Transportation",
+
+    "910": "Added in Price Adjustments",
+    "912": "Added in Commitments",
+    "913": "Added in Pick Confirmation",
+    "914": "Added in Ship Confirmation",
+    "915": "Added as Replacement Item",
+    "916": "Added as Substitution/Associated Item",
+    "917": "Added as Promotional Item",
+    "918": "Added in Transport Arrange Import",
+    "919": "Added in Transportation",
+    "920": "Added in Order Repricing",
+    "922": "Added in Work Order Generation",
+    "924": "Added in Freight Update",
+    "925": "Added in Transport Confirm Import",
+    "926": "Added in Fulfillment Release",
+
+    "980": "Canceled in Order Entry",
+    "981": "Canceled in Fulfillment Release",
+    "982": "Canceled in Commitments",
+    "983": "Canceled in Pick Confirmation",
+    "984": "Canceled in Ship Confirmation",
+    "985": "Canceled by Replacement",
+    "986": "Canceled by Substitution",
+    "987": "Canceled by Price Recalculation",
+    "988": "Canceled in Update",
+    "989": "Canceled in Transportation",
+    "990": "Canceled by Promotional Item",
+    "991": "Canceled due to BOM",
+    "995": "Unapproved Load",
+    "996": "Cancelled Nota Fiscal",
+    "997": "Cancelled Nota Fiscal after Run",
+    "998": "Reversed Nota Fiscal Brazil",
+    "999": "Complete - Ready to Purge"
+  };
+
+  return statusMap[code] || code || "Unknown";
 }
 
 function mapJDESOPriority(priority: string): string {
-  const priorityMap: Record<string, string> = {
-    "1": "Critical",
-    "2": "High",
-    "3": "Medium",
-    "4": "Low",
-    "5": "Low",
-    "": "Medium",
-  };
-  
   const trimmed = priority?.trim() || "";
-  return priorityMap[trimmed] || "Medium";
+  if (!trimmed || trimmed === "") {
+    return "Medium"; // Default if empty
+  }
+  const numPriority = parseInt(trimmed, 10);
+  switch (numPriority) {
+    case 1: return "Critical";
+    case 2: return "High";
+    case 3: return "Medium";
+    case 4:
+    case 5: return "Low";
+    default: return trimmed; // Bind raw data directly if not 1-5
+  }
 }
 
-function calculateJDESORisk(status: string, shipDate: string): string {
+function calculateJDESORisk(
+  status: string,
+  shipDate: string,
+  totalAmount: number,
+  quantity: number
+): string {
+  let riskScore = 0;
+
   const statusCode = parseInt(status?.trim() || "0", 10);
-  
-  if (statusCode === 999) {
-    return "green";
+
+  // 1. Status-based risk
+  if (statusCode >= 999) {
+    return "green"; // completed
   }
-  
+
   if (statusCode >= 580 && statusCode <= 620) {
-    return "green";
+    riskScore += 10; // in progress (low risk)
+  } else if (statusCode < 540) {
+    riskScore += 40; // not started (high risk)
+  } else {
+    riskScore += 20;
   }
-  
+
+  // 2. Ship date risk (delay)
   if (shipDate) {
-    try {
-      const dateStr = shipDate.toString();
-      let year: number, month: number, day: number;
-      
-      if (dateStr.length === 6) {
-        const c = parseInt(dateStr.charAt(0));
-        const yy = parseInt(dateStr.substring(1, 3));
-        const ddd = parseInt(dateStr.substring(3, 6));
-        year = (c * 100) + 1900 + yy;
-        const dateObj = new Date(year, 0, 1);
-        dateObj.setDate(dateObj.getDate() + (ddd - 1));
-        month = dateObj.getMonth();
-        day = dateObj.getDate();
-      } else if (dateStr.includes("-")) {
-        const parts = dateStr.split("-");
-        year = parseInt(parts[0]);
-        month = parseInt(parts[1]) - 1;
-        day = parseInt(parts[2]);
-      } else if (dateStr.length === 7) {
-        const century = parseInt(dateStr.charAt(0));
-        year = century === 0 ? 2000 + parseInt(dateStr.substring(1, 3)) : 1900 + parseInt(dateStr.substring(1, 3));
-        month = parseInt(dateStr.substring(3, 5)) - 1;
-        day = parseInt(dateStr.substring(5, 7));
-      } else if (dateStr.length === 8) {
-        year = parseInt(dateStr.substring(0, 4));
-        month = parseInt(dateStr.substring(4, 6)) - 1;
-        day = parseInt(dateStr.substring(6, 8));
-      } else {
-        return "yellow";
-      }
-      
-      const shipDateObj = new Date(year, month, day);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const daysUntilShip = Math.ceil((shipDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (daysUntilShip < 0) {
-        return "red";
-      } else if (daysUntilShip <= 3) {
-        return "red";
-      } else if (daysUntilShip <= 7) {
-        return "yellow";
-      }
-    } catch (e) {
-      console.warn("[JDE Database] Error parsing ship date:", e);
+    const today = new Date();
+    const reqDate = new Date(convertJEDate(shipDate));
+
+    const diffDays = Math.ceil(
+      (reqDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (diffDays < 0) {
+      riskScore += 50; // already delayed
+    } else if (diffDays <= 2) {
+      riskScore += 30; // very close
+    } else if (diffDays <= 7) {
+      riskScore += 15;
     }
   }
-  
-  return "yellow";
+
+  // 3. High value order risk
+  if (totalAmount > 100000) {
+    riskScore += 20;
+  }
+
+  // 4. Large quantity risk
+  if (quantity > 100) {
+    riskScore += 10;
+  }
+
+  // Final Risk Level
+  if (riskScore >= 80) return "red";
+  if (riskScore >= 40) return "yellow";
+  return "green";
 }
 
 export async function getJDESalesOrderById(soNumber: string): Promise<JDESalesOrder | null> {
@@ -680,7 +767,7 @@ export async function getJDESalesOrderById(soNumber: string): Promise<JDESalesOr
       requestedShipDate: convertJEDate(row.requestedShipDate),
       status: mapJDESOStatus(row.status),
       priority: mapJDESOPriority(row.priority),
-      fulfillmentRisk: calculateJDESORisk(row.status, row.requestedShipDate),
+      fulfillmentRisk: calculateJDESORisk(row.status, row.requestedShipDate, Number(row.totalAmount) || 0, Number(row.quantity) || 0),
     };
   } catch (error) {
     console.error("[JDE Database] Error fetching sales order:", error);
@@ -887,28 +974,39 @@ export async function getJDEShipments(): Promise<JDEShipment[]> {
     return [];
   }
 
-  const query = `
-    SELECT
-      RTRIM(CONVERT(VARCHAR, F4215.XHSHPN)) AS shipmentNumber,
-      RTRIM(ISNULL(F0101Dest.ABALPH, '')) AS destination,
-      CASE 
-        WHEN F4211.SDPDDJ IS NOT NULL AND TRY_CAST(F4211.SDPDDJ AS FLOAT) > 0 THEN 
-          CONVERT(VARCHAR, CAST(F4211.SDPDDJ AS INT))
-        ELSE ''
-      END AS eta,
-      RTRIM(ISNULL(F4211.SDNXTR, '')) AS status,
-      RTRIM(ISNULL(F0116.ALCTY1, '')) AS originCity,
-      RTRIM(ISNULL(F0116.ALCTR, '')) AS originCountry
-    FROM dbo.F4215 F4215
-    LEFT JOIN dbo.F4211 F4211 ON RTRIM(CONVERT(VARCHAR, F4215.XHSHPN)) = RTRIM(CONVERT(VARCHAR, F4211.SDDOCO))
-    LEFT JOIN dbo.F0116 F0116 ON F4215.XHAN8 = F0116.ALAN8
-    LEFT JOIN dbo.F0101 F0101Dest ON F4211.SDSHAN = F0101Dest.ABAN8
-    ORDER BY F4215.XHSHPN DESC
-  `;
+const query = `
+SELECT 
+  RTRIM(CONVERT(VARCHAR, F4215.XHSHPN)) AS shipmentNumber,
+  RTRIM(ISNULL(F0101Dest.ABALPH, '')) AS destination,
+  CASE 
+    WHEN F4211.SDPDDJ IS NOT NULL 
+      AND TRY_CAST(F4211.SDPDDJ AS FLOAT) > 0 
+    THEN CONVERT(VARCHAR, CAST(F4211.SDPDDJ AS INT)) 
+    ELSE '' 
+  END AS eta,
+  RTRIM(ISNULL(F4211.SDNXTR, '')) AS status,
+  RTRIM(ISNULL(F0116.ALCTY1, '')) AS originCity,
+  RTRIM(ISNULL(F0116.ALCTR, '')) AS originCountry
+FROM dbo.F4215 F4215
+LEFT JOIN dbo.F4211 F4211 
+  ON RTRIM(CONVERT(VARCHAR, F4215.XHSHPN)) = RTRIM(CONVERT(VARCHAR, F4211.SDDOCO))
+LEFT JOIN dbo.F0116 F0116 
+  ON F4215.XHAN8 = F0116.ALAN8
+LEFT JOIN dbo.F0101 F0101Dest 
+  ON F4211.SDSHAN = F0101Dest.ABAN8
+ORDER BY F4215.XHSHPN DESC;
+`;
 
   try {
-    const rows = await executeQuery<any>(query);
-    
+const rows = await executeQuery<any>(query);
+
+console.log("[SHIPMENT RAW DATA RECORDS] Found", rows.length, "rows");
+rows.forEach((row: any, index: number) => {
+  console.log(`Record ${index + 1}: Shipment# ${row.shipmentNumber}, Status: "${row.status}", ETA: "${row.eta}", Dest: "${row.destination}", Origin: "${row.originCity}, ${row.originCountry}"`);
+});
+if (rows.length > 0) {
+  console.log("Sample row:", rows[0]);
+}
     return rows.map((row: any) => ({
       shipmentNumber: row.shipmentNumber || "",
       carrier: "TBD",
@@ -926,67 +1024,47 @@ export async function getJDEShipments(): Promise<JDEShipment[]> {
 }
 
 function mapJDEShipmentStatus(nxtStatus: string): string {
-  const statusMap: Record<string, string> = {
-    "420": "Pending",
-    "430": "Picked Up",
-    "440": "In Transit",
-    "450": "Arrived",
-    "460": "Out for Delivery",
-    "470": "Delivered",
-    "480": "Completed",
-    "999": "Cancelled",
-    "": "Pending",
-  };
-  
-  const trimmed = nxtStatus?.trim() || "";
-  return statusMap[trimmed] || trimmed || "Pending";
+  const code = nxtStatus?.trim() || "";
+  return JDE_STATUS_MAP[code] || code || "Unknown";
 }
 
 function calculateShipmentRisk(status: string, eta: string): string {
-  if (status === "470" || status === "480") {
+  let riskScore = 0;
+
+  const statusCode = parseInt(status || "0", 10);
+
+  // Status-based risk
+  if (statusCode >= 999) {
     return "green";
   }
-  
-  if (status === "999") {
-    return "green";
+
+  if (statusCode >= 560 && statusCode <= 620) {
+    riskScore += 10; // shipped/invoiced low risk
+  } else if (statusCode < 540) {
+    riskScore += 40; // pre-pick high risk
+  } else {
+    riskScore += 20;
   }
-  
+
+  // ETA delay risk
   if (eta) {
-    try {
-      const dateStr = eta.toString();
-      let year: number, month: number, day: number;
-      
-      if (dateStr.length === 7) {
-        const century = parseInt(dateStr.charAt(0));
-        year = century === 0 ? 2000 + parseInt(dateStr.substring(1, 3)) : 1900 + parseInt(dateStr.substring(1, 3));
-        month = parseInt(dateStr.substring(3, 5)) - 1;
-        day = parseInt(dateStr.substring(5, 7));
-      } else if (dateStr.length === 8) {
-        year = parseInt(dateStr.substring(0, 4));
-        month = parseInt(dateStr.substring(4, 6)) - 1;
-        day = parseInt(dateStr.substring(6, 8));
-      } else {
-        return "yellow";
-      }
-      
-      const etaDateObj = new Date(year, month, day);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const daysUntilArrival = Math.ceil((etaDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (daysUntilArrival < 0) {
-        return "red";
-      } else if (daysUntilArrival <= 2) {
-        return "red";
-      } else if (daysUntilArrival <= 5) {
-        return "yellow";
-      }
-    } catch (e) {
-      console.warn("[JDE Database] Error parsing ETA date:", e);
+    const today = new Date();
+    const reqDate = new Date(convertJEDate(eta));
+
+    const diffDays = Math.ceil((reqDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      riskScore += 50;
+    } else if (diffDays <= 2) {
+      riskScore += 30;
+    } else if (diffDays <= 7) {
+      riskScore += 15;
     }
   }
-  
+
+  // Final
+  if (riskScore >= 80) return "red";
+  if (riskScore >= 40) return "yellow";
   return "green";
 }
 

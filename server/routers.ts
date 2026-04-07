@@ -250,10 +250,13 @@ const salesOrderRouter = router({
       if (input?.status && input.status !== 'all') {
         // Map frontend status values to backend status values
         const statusMap: Record<string, string> = {
-          'pending': 'Pending',
-          'in_progress': 'In Progress',
-          'shipped_billing': 'Shipped/Billing',
-          'completed': 'Completed',
+          'enter_order': 'Enter Order/Receive EDI Order',
+          'print_pick': 'Print Pick',
+          'ship_confirm': 'Ship Confirmation',
+          'print_invoice': 'Print Invoices',
+          'invoice_journal': 'Invoice Journal',
+          'sales_update': 'Sales Update',
+          'complete': 'Complete - Ready to Purge',
         };
         const mappedStatus = statusMap[input.status] || input.status;
         
