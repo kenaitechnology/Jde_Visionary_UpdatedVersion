@@ -111,46 +111,13 @@ export default function Analytics() {
 
   const isLoading = isLoadingOverview || isLoadingTrends || isLoadingInventory || isLoadingSupplier || isLoadingAlerts || isLoadingRisk;
 
-  // Format data for charts from real data
-  const deliveryTrendData = deliveryTrends && deliveryTrends.length > 0 ? deliveryTrends : [
-    { date: "2024-01", onTime: 85, delayed: 15 },
-    { date: "2024-02", onTime: 88, delayed: 12 },
-    { date: "2024-03", onTime: 92, delayed: 8 },
-    { date: "2024-04", onTime: 90, delayed: 10 },
-    { date: "2024-05", onTime: 87, delayed: 13 },
-    { date: "2024-06", onTime: 91, delayed: 9 },
-    { date: "2024-07", onTime: 94, delayed: 6 },
-  ];
-
-  const inventoryTrendData = inventoryTrends && inventoryTrends.length > 0 ? inventoryTrends : [
-    { date: "2024-01", healthy: 75, atRisk: 18, critical: 7 },
-    { date: "2024-02", healthy: 78, atRisk: 15, critical: 7 },
-    { date: "2024-03", healthy: 82, atRisk: 12, critical: 6 },
-    { date: "2024-04", healthy: 80, atRisk: 14, critical: 6 },
-    { date: "2024-05", healthy: 77, atRisk: 16, critical: 7 },
-    { date: "2024-06", healthy: 84, atRisk: 11, critical: 5 },
-    { date: "2024-07", healthy: 86, atRisk: 10, critical: 4 },
-  ];
-
-  const supplierPerformanceData = supplierPerformance && supplierPerformance.length > 0 ? supplierPerformance : [];
-
-  const riskDistributionData = riskDistribution && riskDistribution.length > 0 ? riskDistribution : [
-    { name: "On Track", value: 65, color: COLORS.green },
-    { name: "At Risk", value: 25, color: COLORS.yellow },
-    { name: "Critical", value: 10, color: COLORS.red },
-  ];
-
-  const alertTrendData = alertTrends && alertTrends.length > 0 ? alertTrends : [
-    { date: "2024-01", stockout: 5, delay: 8, supplier: 3, quality: 2 },
-    { date: "2024-02", stockout: 7, delay: 12, supplier: 4, quality: 1 },
-    { date: "2024-03", stockout: 4, delay: 6, supplier: 2, quality: 3 },
-    { date: "2024-04", stockout: 6, delay: 9, supplier: 5, quality: 2 },
-    { date: "2024-05", stockout: 8, delay: 11, supplier: 3, quality: 4 },
-    { date: "2024-06", stockout: 3, delay: 5, supplier: 2, quality: 1 },
-    { date: "2024-07", stockout: 4, delay: 7, supplier: 3, quality: 2 },
-  ];
-
-  // Calculate metrics from real data
+// Bind real data properly
+  const deliveryTrendData = deliveryTrends || [];
+  const inventoryTrendData = inventoryTrends || [];
+  const supplierPerformanceData = supplierPerformance || [];
+  const riskDistributionData = riskDistribution || [];
+  const alertTrendData = alertTrends || [];
+// Calculate metrics from real data
   const onTimeDelivery = analyticsOverview?.deliveryPerformance?.onTimeDeliveryRate || 0;
   const totalInventory = analyticsOverview?.inventory?.total || 1;
   const criticalItems = analyticsOverview?.inventory?.critical || 0;

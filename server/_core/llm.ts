@@ -228,7 +228,7 @@ const getApiKey = () => {
 
 const getModel = () => {
   if (ENV.openaiApiKey && ENV.openaiApiKey.trim().length > 0) {
-    return "gpt-4o";
+    return "command-r";
   }
   return "gemini-2.5-flash";
 };

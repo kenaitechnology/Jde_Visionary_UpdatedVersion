@@ -886,13 +886,13 @@ const analyticsRouter = router({
       const purchaseOrders = await jdeDb.getJDEPurchaseOrders();
       const shipments = await jdeDb.getJDEShipments();
       
-      // Group purchase orders by month for trend analysis
+      // Group purchase orders by month for trend analysis - use proper JDE dates
       const ordersByMonth = new Map<string, { total: number; onTime: number; delayed: number }>();
       
       purchaseOrders.forEach((po: any) => {
         if (po.orderDate) {
           const date = new Date(po.orderDate);
-          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const monthKey = date.toISOString().slice(0, 7); // YYYY-MM format
           
           if (!ordersByMonth.has(monthKey)) {
             ordersByMonth.set(monthKey, { total: 0, onTime: 0, delayed: 0 });
@@ -915,7 +915,7 @@ const analyticsRouter = router({
       shipments.forEach((shipment: any) => {
         if (shipment.eta) {
           const date = new Date(shipment.eta);
-          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const monthKey = date.toISOString().slice(0, 7); // YYYY-MM format
           
           if (!shipmentsByMonth.has(monthKey)) {
             shipmentsByMonth.set(monthKey, { total: 0, onTime: 0, delayed: 0 });
@@ -961,7 +961,7 @@ const analyticsRouter = router({
       // Generate trend data (for now, using current distribution as a single data point)
       // In a real implementation, this would query historical data
       const currentDate = new Date();
-      const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+      const monthKey = currentDate.toISOString().slice(0, 7);
       
       return [{
         date: monthKey,
@@ -1012,7 +1012,7 @@ const analyticsRouter = router({
       
       // Generate alert trend data for the current month
       const currentDate = new Date();
-      const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+      const monthKey = currentDate.toISOString().slice(0, 7);
       
       return [{
         date: monthKey,

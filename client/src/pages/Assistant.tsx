@@ -25,11 +25,11 @@ type Message = {
 const suggestedQuestions = [
   {
     icon: Package,
-    text: "Total sales quantity per customer from sales orders",
+    text: "Show high priority sales order details",
   },
   {
     icon: Truck,
-    text: "Show high priority sales order details",
+    text: "Open sales orders status 520",
   },
   {
     icon: Box,
