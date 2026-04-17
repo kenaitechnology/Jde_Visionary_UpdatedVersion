@@ -523,6 +523,11 @@ export async function getJDESalesOrders(): Promise<JDESalesOrder[]> {
   try {
     const rows = await executeQuery<any>(query);
     
+    console.log(`[JDE SALES RAW DATA] Found ${rows.length} sales orders`);
+    if (rows.length > 0) {
+      console.log('[JDE SALES SAMPLE]', rows.slice(0, 3));
+    }
+    
       return rows.map((row: any) => ({
         soNumber: row.soNumber || "",
         customerName: row.customerName || "Unknown Customer",
@@ -667,6 +672,8 @@ function calculateJDESORisk(
   let riskScore = 0;
 
   const statusCode = parseInt(status?.trim() || "0", 10);
+  
+  console.log(`[JDE SO RISK CALC] status:${status}(${statusCode}), shipDays:${shipDate ? new Date(convertJEDate(shipDate)).toISOString().split('T')[0] : 'N/A'}, amt:${totalAmount}, qty:${quantity}`);
 
   // 1. Status-based risk
   if (statusCode >= 999) {
@@ -709,8 +716,10 @@ function calculateJDESORisk(
     riskScore += 10;
   }
 
-  // Final Risk Level
-  if (riskScore >= 80) return "red";
+  console.log(`[JDE SO RISK RESULT] score:${riskScore.toFixed(0)} -> ${riskScore >= 80 ? 'red' : riskScore >= 60 ? 'red (adjusted)' : riskScore >= 40 ? 'yellow' : 'green'}`);
+  
+  // Final Risk Level - LOWERED threshold for more criticals post-deploy
+  if (riskScore >= 60) return "red";
   if (riskScore >= 40) return "yellow";
   return "green";
 }

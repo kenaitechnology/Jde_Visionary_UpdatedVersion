@@ -25,7 +25,7 @@ type Message = {
 const suggestedQuestions = [
   {
     icon: Package,
-    text: "Show high priority sales order details",
+    text: "Show high priority sales order",
   },
   {
     icon: Truck,
@@ -41,25 +41,25 @@ function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
 
   return (
-    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
+    <div className={`flex gap-2 sm:gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
       <div
-        className={`w-8 h-8 shrink-0 flex items-center justify-center ${
+        className={`w-7 h-7 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded ${
           isUser ? "bg-primary text-primary-foreground" : "bg-muted"
         }`}
       >
-        {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+        {isUser ? <User className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
       </div>
       <div
-        className={`max-w-[80%] p-4 ${
+        className={`max-w-[85%] sm:max-w-[80%] p-3 sm:p-4 rounded-lg ${
           isUser
             ? "bg-primary text-primary-foreground"
             : "bg-muted"
         }`}
       >
         {isUser ? (
-          <p className="text-sm">{message.content}</p>
+          <p className="text-xs sm:text-sm whitespace-pre-wrap">{message.content}</p>
         ) : (
-          <div className="text-sm prose prose-sm max-w-none dark:prose-invert">
+          <div className="text-xs sm:text-sm prose prose-sm sm:prose-base max-w-none dark:prose-invert">
             <Streamdown>{message.content}</Streamdown>
           </div>
         )}
@@ -114,9 +114,28 @@ export default function Assistant() {
       const row = headers.map(key => {
         const val = arr[i][key];
         if (val === null || val === undefined) return '';
-        if (typeof val === 'number') return val.toString();
-        if (typeof val === 'boolean') return val ? 'Yes' : 'No';
-        return String(val).substring(0, 30) + (String(val).length > 100 ? '...' : '');
+        let displayVal: string;
+        if (typeof val === 'number') {
+          displayVal = val.toString();
+        } else if (typeof val === 'boolean') {
+          displayVal = val ? 'Yes' : 'No';
+        } else {
+          displayVal = String(val);
+        }
+        
+        // Format JDE dates (any column with 8-digit YYYYMMDD pattern) - tables F4211(SDDRQJ,SDPDDJ), F4111(ILTRDJ), F4301(PDDRQJ,PDPDDJ,PDTRDJ), F43121(PRRCDJ)
+        const trimmed = displayVal.trim();
+        if (/^\d{8}$/.test(trimmed)) {
+          const year = trimmed.slice(0,4);
+          const month = trimmed.slice(4,6);
+          const day = trimmed.slice(6,8);
+          const date = new Date(+year, +month-1, +day);
+          if (!isNaN(date.getTime())) {
+            displayVal = `${year}-${month.padStart(2,'0')}-${day.padStart(2,'0')}`;
+          }
+        }
+        
+        return displayVal.substring(0, 30) + (displayVal.length > 100 ? '...' : ''); 
       });
       table += `| ${row.join(' | ')} |\n`;
     }
@@ -156,11 +175,11 @@ export default function Assistant() {
 
   const handleSend = async () => {
     if (!input.trim()) return;
-    //handle
 
     const userMessage = input.trim();
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setInput("");
+    setIsLoading(true);
 
     try {
       const response = await fetch('https://jde-visionary-ai-backend.onrender.com/api/ask', {
@@ -180,7 +199,7 @@ export default function Assistant() {
 
       setMessages((prev) => [
         ...prev,
-{ role: "assistant", content: formatDataForDisplay(data) },
+        { role: "assistant", content: formatDataForDisplay(data) },
       ]);
     } catch (error) {
       console.error('Error:', error);
@@ -191,6 +210,8 @@ export default function Assistant() {
           content: "I apologize, but I encountered an error processing your request. Please try again.",
         },
       ]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -200,66 +221,68 @@ export default function Assistant() {
 
   return (
     <DashboardLayout>
-      <div className="h-[calc(100vh-8rem)] flex flex-col">
+      <div className="min-h-0 flex flex-col">
         {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-2">
+        <div className="mb-4 sm:mb-6">
+          <div className="flex items-center gap-2 sm:gap-3 mb-2">
             <div className="accent-square-lg" />
-            <h1 className="text-3xl font-bold tracking-tight">Digital Assistant</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Digital Assistant</h1>
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-sm sm:text-base text-muted-foreground">
             Ask questions about your supply chain using natural language
           </p>
         </div>
 
         {/* Chat Area */}
-        <Card className="flex-1 flex flex-col overflow-hidden">
-          <CardHeader className="border-b py-4">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
+        <Card className="flex-1 flex flex-col overflow-hidden min-h-0">
+          <CardHeader className="border-b py-3 sm:py-4">
+            <CardTitle className="text-xs sm:text-sm font-semibold flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 flex-shrink-0" />
               JDE Visionary AI
             </CardTitle>
           </CardHeader>
           <CardContent className="flex-1 p-0 flex flex-col">
-            <ScrollArea className="flex-1 p-4 h-[60vh] min-h-[400px]" ref={scrollAreaRef}>
+            <ScrollArea className="flex-1 p-3 sm:p-4 min-h-0" ref={scrollAreaRef}>
               {messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 min-h-[400px]">
-                  <div className="w-16 h-16 bg-primary/10 flex items-center justify-center mb-6">
-                    <Bot className="h-8 w-8 text-primary" />
+                <div className="flex flex-col items-center justify-center py-8 sm:py-12 h-full">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 bg-primary/10 flex items-center justify-center mb-4 sm:mb-6">
+                    <Bot className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
                   </div>
-                  <h3 className="text-lg font-semibold mb-2">
+                  <h3 className="text-base sm:text-lg font-semibold mb-2">
                     Welcome to the Digital Assistant
                   </h3>
                   <p className="text-sm text-muted-foreground text-center max-w-md mb-8">
                     I can help you understand your supply chain data, identify risks,
                     and provide actionable insights. Try asking me a question!
                   </p>
-                  <div className="grid gap-3 w-full max-w-lg">
-                    <p className="text-caption">Suggested Questions</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 w-full max-w-md sm:max-w-lg">
+                    <p className="text-caption col-span-full">Suggested Questions</p>
                     {suggestedQuestions.map((q, i) => (
                       <button
                         key={i}
                         onClick={() => handleSuggestedQuestion(q.text)}
-                        className="flex items-center gap-3 p-3 text-left bg-muted hover:bg-muted/80 transition-colors text-sm"
+                        className="flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 text-left bg-muted hover:bg-muted/80 transition-colors text-xs sm:text-sm h-fit"
                       >
-                        <q.icon className="h-4 w-4 text-primary shrink-0" />
-                        <span>{q.text}</span>
+                        <q.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary shrink-0 flex-shrink-0" />
+                        <span className="line-clamp-2">{q.text}</span>
                       </button>
                     ))}
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4 pt-4">
+                <div className="space-y-3 sm:space-y-4 pt-3 sm:pt-4 [&>*:first-child]:mt-0">
                   {messages.map((message, i) => (
                     <MessageBubble key={i} message={message} />
                   ))}
                   {isLoading && (
-                    <div className="flex gap-3">
-                      <div className="w-8 h-8 shrink-0 flex items-center justify-center bg-muted">
-                        <Bot className="h-4 w-4" />
+                    <div className="flex gap-2 sm:gap-3">
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center bg-muted rounded">
+                        <Bot className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       </div>
-                      <div className="p-4 bg-muted">
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                      <div className="max-w-[85%] sm:max-w-[80%] p-3 sm:p-4 bg-muted flex items-center gap-1.5 sm:gap-2 rounded-lg">
+                        <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
+                        <span className="text-xs sm:text-sm text-muted-foreground">AI is thinking</span>
+                        <span className="animate-pulse text-xs sm:text-sm">...</span>
                       </div>
                     </div>
                   )}
@@ -268,29 +291,30 @@ export default function Assistant() {
             </ScrollArea>
 
             {/* Input Area */}
-            <div className="p-4 border-t">
+            <div className="p-3 sm:p-4 border-t bg-background/50">
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
                   handleSend();
                 }}
-                className="flex gap-3"
+                className="flex gap-2 sm:gap-3"
               >
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="Ask about your supply chain..."
-                  className="flex-1"
+                  className="flex-1 text-xs sm:text-sm min-h-[38px] sm:min-h-[42px]"
                   disabled={isLoading}
                 />
                 <Button
                   type="submit"
                   disabled={!input.trim() || isLoading}
+                  className="h-[38px] sm:h-[42px] w-[38px] sm:w-[42px] shrink-0"
                 >
                   {isLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
                   ) : (
-                    <Send className="h-4 w-4" />
+                    <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   )}
                 </Button>
               </form>

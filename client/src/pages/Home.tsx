@@ -10,13 +10,19 @@ import {
   Box,
   CheckCircle2,
   Clock,
+  FileText,
   Package,
   ShoppingCart,
   Truck,
   Users,
   XCircle,
 } from "lucide-react";
+import { toast } from "sonner";
+import { useCallback, useState } from "react";
 import { useLocation } from "wouter";
+import { ExecutiveReportViewer } from "@/components/ExecutiveReportViewer";
+import type { ExecutiveReport } from "../../../shared/types";
+
 
 function RiskBadge({ level }: { level: string }) {
   const config = {
@@ -79,14 +85,26 @@ function MetricCard({
 
 function RiskOverviewSection() {
   const [, setLocation] = useLocation();
-  const { data: riskData, isLoading } = trpc.dashboard.getRiskOverview.useQuery();
+  const { data: riskData, isLoading: riskLoading } = trpc.dashboard.getRiskOverview.useQuery();
+  const { data: rawCriticalAlerts = [], isLoading: alertsLoading } = trpc.alert.list.useQuery({ 
+    severity: 'critical' 
+  }, {
+    select: (data) => data?.filter((alert: any) => 
+      (alert.relatedEntityType === 'sales_order' || 
+       alert.title?.includes('SO ') || 
+       alert.title?.includes('Sales Order'))
+    ) || []
+  });
+  const criticalSalesAlerts = rawCriticalAlerts.slice(0, 5);
 
-  if (isLoading) {
+  const loading = riskLoading || alertsLoading;
+
+  if (loading) {
     return (
       <div className="space-y-4">
         <Skeleton className="h-8 w-48" />
-        <div className="grid gap-4 md:grid-cols-2">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2">
+          {[1, 2, 3, 4, 5].map((i) => (
             <Skeleton key={i} className="h-48" />
           ))}
         </div>
@@ -107,7 +125,7 @@ function RiskOverviewSection() {
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-2">
         {/* Delayed Purchase Orders */}
         <Card>
           <CardHeader className="pb-3">
@@ -116,7 +134,8 @@ function RiskOverviewSection() {
                 <Clock className="h-4 w-4 text-[oklch(0.55_0.25_27)]" />
                 Delayed Purchase Orders
               </CardTitle>
-              <Badge variant="destructive">{riskData?.delayedPurchaseOrders?.length || 0}</Badge>
+              {/* Count removed */}
+
             </div>
           </CardHeader>
           <CardContent>
@@ -154,7 +173,7 @@ function RiskOverviewSection() {
                 <AlertTriangle className="h-4 w-4 text-[oklch(0.80_0.18_85)]" />
                 Stockout Risks (14 days)
               </CardTitle>
-              <Badge variant="secondary">{riskData?.stockoutRisks?.length || 0}</Badge>
+              {/* Count removed */}
             </div>
           </CardHeader>
           <CardContent>
@@ -192,7 +211,8 @@ function RiskOverviewSection() {
                 <XCircle className="h-4 w-4 text-[oklch(0.55_0.25_27)]" />
                 Critical Alerts
               </CardTitle>
-              <Badge variant="destructive">{riskData?.criticalAlerts?.length || 0}</Badge>
+              {/* Count removed */}
+
             </div>
           </CardHeader>
           <CardContent>
@@ -222,6 +242,44 @@ function RiskOverviewSection() {
           </CardContent>
         </Card>
 
+        {/* Critical Sales Orders */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <FileText className="h-4 w-4 text-[oklch(0.55_0.25_27)]" />
+                Critical Sales Orders
+              </CardTitle>
+{/* Count removed */}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {criticalSalesAlerts?.slice(0, 3).map((alert: any) => (
+                <div
+                  key={alert.id}
+                  className="flex items-center justify-between py-2 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 -mx-2 px-2 transition-colors"
+                  onClick={() => setLocation("/sales-orders")}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm truncate">{alert.title}</p>
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {alert.type.replace(/_/g, " ")}
+                    </p>
+                  </div>
+                  <Badge variant="destructive" className="ml-2 shrink-0">Critical</Badge>
+                </div>
+              ))}
+{(!rawCriticalAlerts || rawCriticalAlerts.length === 0) && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                  <CheckCircle2 className="h-4 w-4 text-[oklch(0.65_0.2_145)]" />
+                  No critical sales alerts
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* At-Risk Shipments */}
         <Card>
           <CardHeader className="pb-3">
@@ -230,7 +288,8 @@ function RiskOverviewSection() {
                 <Truck className="h-4 w-4 text-[oklch(0.55_0.25_27)]" />
                 At-Risk Shipments
               </CardTitle>
-              <Badge variant="secondary">{riskData?.atRiskShipments?.length || 0}</Badge>
+              {/* Count removed */}
+
             </div>
           </CardHeader>
           <CardContent>
@@ -268,6 +327,34 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const { data: stats, isLoading } = trpc.dashboard.getStats.useQuery();
 
+  const [summaryData, setSummaryData] = useState<ExecutiveReport | null>(null);
+
+  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [errorSummary, setErrorSummary] = useState("");
+
+  const fetchExecutiveSummary = useCallback(async () => {
+    setLoadingSummary(true);
+    setErrorSummary("");
+    setSummaryData(null);
+    toast.loading("Fetching executive summary...");
+    
+    try {
+      const response = await fetch("http://localhost:5000/api/executive-summary");
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const data = await response.json();
+      setSummaryData(data);
+      toast.success("Executive summary loaded");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to fetch";
+      setErrorSummary(message);
+      toast.error(message);
+    } finally {
+      setLoadingSummary(false);
+    }
+  }, []);
+
   return (
     <DashboardLayout>
       <div className="space-y-8">
@@ -282,10 +369,39 @@ export default function Home() {
               Real-time supply chain visibility and AI-powered risk management
             </p>
           </div>
-          <Button onClick={() => setLocation("/assistant")}>
-            Ask Digital Assistant
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setLocation("/assistant")}>
+              Ask Digital Assistant
+            </Button>
+            <Button onClick={() => setLocation("/executive-report")}>
+              <FileText className="mr-2 h-4 w-4" />
+              Executive Summary Report
+            </Button>
+          </div>
         </div>
+
+        {/* Executive Summary Result */}
+        {summaryData && (
+          <ExecutiveReportViewer data={summaryData} />
+        )}
+
+        {errorSummary && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Error Loading Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-destructive">{errorSummary}</p>
+              <Button 
+                variant="outline" 
+                className="mt-2" 
+                onClick={fetchExecutiveSummary}
+              >
+                Retry
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Divider */}
         <div className="swiss-divider-bold" />
@@ -302,29 +418,37 @@ export default function Home() {
             <>
               <MetricCard
                 title="Purchase Orders"
-                value={stats?.purchaseOrders?.total || 0}
-                subtitle={`${stats?.purchaseOrders?.atRisk || 0} at risk`}
+                value={stats?.purchaseOrders?.total ?? 0}
+
+                subtitle={`${stats?.purchaseOrders?.atRisk ?? 0} at risk`}
+
                 icon={ShoppingCart}
                 onClick={() => setLocation("/purchase-orders")}
               />
               <MetricCard
                 title="Inventory Items"
-                value={stats?.inventory?.total || 0}
-                subtitle={`${stats?.inventory?.lowStock || 0} low stock`}
+                value={stats?.inventory?.total ?? 0}
+
+                subtitle={`${stats?.inventory?.lowStock ?? 0} low stock`}
+
                 icon={Box}
                 onClick={() => setLocation("/inventory")}
               />
               <MetricCard
                 title="Active Suppliers"
-                value={stats?.suppliers?.active || 0}
-                subtitle={`${Number(stats?.suppliers?.avgReliability || 0).toFixed(1)}% avg reliability`}
+                value={stats?.suppliers?.total || 0}
+
+                subtitle="Inactive vendors"
+
                 icon={Users}
                 onClick={() => setLocation("/suppliers")}
               />
               <MetricCard
                 title="Pending Alerts"
-                value={stats?.alerts?.unread || 0}
-                subtitle={`${stats?.alerts?.critical || 0} critical`}
+                value={stats?.alerts?.critical ?? 0}
+
+                subtitle="Critical"
+
                 icon={AlertTriangle}
                 onClick={() => setLocation("/alerts")}
               />

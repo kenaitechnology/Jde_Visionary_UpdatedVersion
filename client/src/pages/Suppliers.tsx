@@ -111,20 +111,17 @@ function SupplierCard({ supplier, onFindAlternatives }: { supplier: any; onFindA
           </div>
 
           <div className="space-y-3">
-<ScoreBar 
+        <ScoreBar 
   score={Number(supplier.reliabilityScore)} 
   label="Reliability" 
-  tooltip="On-time receipts: Receipt Date ≤ Requested Date (F4311/F43121)" 
 />
-<ScoreBar 
+        <ScoreBar 
   score={Number(supplier.onTimeDeliveryRate)} 
   label="On-Time Delivery" 
-  tooltip="Same as reliability: % receipts on/early (Receipt ≤ Requested)" 
 />
-<ScoreBar 
+        <ScoreBar 
   score={Number(supplier.qualityScore)} 
   label="Quality" 
-  tooltip="(Received Qty - Open Qty) / Ordered Qty × 100 (F4311 PDUORG/PDUOPN)" 
 />
           </div>
 
@@ -153,9 +150,9 @@ function transformJDESupplier(jdeSupplier: any) {
     status: jdeSupplier.type === 'V' ? 'active' : 'inactive', // V = Vendor = Active
     country: jdeSupplier.country || 'N/A',
     leadTimeDays: jdeSupplier.leadDays || 0,
-    reliabilityScore: jdeSupplier.reliabilityScore || 0, // From JDE F4311 + F43121
-    onTimeDeliveryRate: jdeSupplier.reliabilityScore || 0, // Same as reliability (Receipt Date ≤ Requested Date)
-    qualityScore: jdeSupplier.qualityScore || 0, // From JDE F4311: (PDUORG - PDUOPN) / PDUORG × 100
+  reliabilityScore: jdeSupplier.reliabilityScore || 0,
+  onTimeDeliveryRate: jdeSupplier.reliabilityScore || 0,
+  qualityScore: jdeSupplier.qualityScore || 0,
     category: 'Vendor', // JDE type V means Vendor
   };
 }
@@ -206,15 +203,11 @@ export default function Suppliers() {
     });
   };
 
-  // Calculate average reliability and on-time delivery from JDE data
+  // Calculate average quality from JDE data
   const avgReliability = suppliers?.length 
     ? suppliers.reduce((sum: number, s: any) => sum + (s.reliabilityScore || 0), 0) / suppliers.filter((s: any) => s.reliabilityScore > 0).length || 0
     : 0;
-  
-  // On-Time is the same as reliability (percentage where Receipt Date ≤ Requested Date)
   const avgOnTime = avgReliability;
-  
-  // Calculate average quality from JDE data
   const avgQuality = suppliers?.length
     ? suppliers.reduce((sum: number, s: any) => sum + (s.qualityScore || 0), 0) / suppliers.filter((s: any) => s.qualityScore > 0).length || 0
     : 0;
@@ -272,10 +265,10 @@ export default function Suppliers() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-caption">Avg Reliability</p>
-                  <p className="text-3xl font-bold">{avgReliability > 0 ? `${avgReliability.toFixed(1)}%` : 'N/A'}</p>
+                  <p className="text-caption">Avg On-Time</p>
+                  <p className="text-3xl font-bold">{avgOnTime > 0 ? `${avgOnTime.toFixed(1)}%` : '0'}</p>
                 </div>
-                <Star className="h-8 w-8 text-muted-foreground" />
+                <TrendingUp className="h-8 w-8 text-muted-foreground" />
               </div>
             </CardContent>
           </Card>
@@ -283,10 +276,10 @@ export default function Suppliers() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-caption">Avg On-Time</p>
-                  <p className="text-3xl font-bold">{avgOnTime > 0 ? `${avgOnTime.toFixed(1)}%` : 'N/A'}</p>
+                  <p className="text-caption">Avg Quality</p>
+                  <p className="text-3xl font-bold">{avgQuality > 0 ? `${avgQuality.toFixed(1)}%` : '0'}</p>
                 </div>
-                <TrendingUp className="h-8 w-8 text-muted-foreground" />
+                <Star className="h-8 w-8 text-muted-foreground" />
               </div>
             </CardContent>
           </Card>

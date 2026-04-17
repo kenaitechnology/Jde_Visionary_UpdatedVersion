@@ -408,22 +408,30 @@ const alertRouter = router({
           updatedAt: new Date(),
         }));
       
+      console.log(`[ALERT GEN] JDE Sales Orders: ${jdeSalesOrders.length}, Red: ${jdeSalesOrders.filter((so: any) => so.fulfillmentRisk === 'red').length}, Yellow: ${jdeSalesOrders.filter((so: any) => so.fulfillmentRisk === 'yellow').length}`);
+      
       // Generate alerts from JDE Sales Orders (fulfillment risks)
       const salesOrderAlerts = jdeSalesOrders
         .filter((so: any) => so.fulfillmentRisk === "red" || so.fulfillmentRisk === "yellow")
-        .map((so: any) => ({
-          id: -3000 - getStringHash(so.soNumber),
-          type: so.fulfillmentRisk === "red" ? "delivery_delay" as const : "general" as const,
-          severity: so.fulfillmentRisk === "red" ? "critical" as const : "warning" as const,
-          title: so.fulfillmentRisk === "red" ? `Critical Fulfillment Risk: SO ${so.soNumber}` : `Fulfillment At Risk: SO ${so.soNumber}`,
-          message: `Sales Order ${so.soNumber} for customer ${so.customerName} has fulfillment risk. Requested ship date: ${so.requestedShipDate || "N/A"}. Status: ${so.status}. Priority: ${so.priority}.`,
-          relatedEntityType: "sales_order",
-          relatedEntityId: undefined,
-          isRead: false,
-          isResolved: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        }));
+        .map((so: any) => {
+          const alert = {
+            id: -3000 - getStringHash(so.soNumber),
+            type: so.fulfillmentRisk === "red" ? "delivery_delay" as const : "general" as const,
+            severity: so.fulfillmentRisk === "red" ? "critical" as const : "warning" as const,
+            title: so.fulfillmentRisk === "red" ? `Critical Fulfillment Risk: SO ${so.soNumber}` : `Fulfillment At Risk: SO ${so.soNumber}`,
+            message: `Sales Order ${so.soNumber} for customer ${so.customerName} has fulfillment risk. Requested ship date: ${so.requestedShipDate || "N/A"}. Status: ${so.status}. Priority: ${so.priority}.`,
+            relatedEntityType: "sales_order",
+            relatedEntityId: undefined,
+            isRead: false,
+            isResolved: false,
+            createdAt: new Date(Date.now() - 1000 * 60 * 60), // Prioritize sales criticals by older "createdAt"
+            updatedAt: new Date(),
+          };
+          console.log(`[ALERT SALES] Generated critical alert for SO ${so.soNumber} (${so.fulfillmentRisk})`);
+          return alert;
+        });
+      console.log(`[ALERT GEN] Sales alerts generated: ${salesOrderAlerts.length}`);
+      
       
       // Generate alerts from JDE Shipments (delivery delays and temperature alerts)
       const shipmentAlerts = jdeShipments
@@ -733,10 +741,11 @@ const demandRouter = router({
 const dashboardRouter = router({
   getStats: publicProcedure.query(async () => {
     // Fetch stats from both JDE and local database
-    const [jdePurchaseOrders, jdeInventory, jdeShipments, localStats] = await Promise.all([
+    const [jdePurchaseOrders, jdeInventory, jdeShipments, jdeSuppliers, localStats] = await Promise.all([
       jdeDb.getJDEPurchaseOrders(),
       jdeDb.getJDEInventoryItems(),
       jdeDb.getJDEShipments(),
+      jdeDb.getJDESuppliers(),
       db.getDashboardStats(),
     ]);
     
@@ -757,7 +766,16 @@ const dashboardRouter = router({
         lowStock: lowStockItems.length,
         criticalStock: jdeInventory.filter((item: any) => item.stockoutRisk === 'critical').length,
       },
-      suppliers: localStats?.suppliers || { active: 0, avgReliability: 0 },
+      suppliers: {
+        total: jdeSuppliers.length,
+        active: jdeSuppliers.filter((s: any) => s.type === 'V').length,
+        avgReliability: jdeSuppliers.length > 0 
+          ? jdeSuppliers.reduce((sum: number, s: any) => sum + (s.reliabilityScore || 0), 0) / jdeSuppliers.length 
+          : 0,
+        avgOnTime: jdeSuppliers.length > 0 
+          ? jdeSuppliers.reduce((sum: number, s: any) => sum + (s.onTimeDeliveryRate || s.reliabilityScore || 0), 0) / jdeSuppliers.length 
+          : 0,
+      },
       alerts: localStats?.alerts || { unread: 0, critical: 0 },
       shipments: {
         total: jdeShipments.length,

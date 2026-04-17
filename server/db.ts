@@ -12,6 +12,7 @@ import {
   remediationActions, InsertRemediationAction
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import * as jdeDb from "./jdeDb";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -480,40 +481,90 @@ export async function updateRemediationAction(id: number, data: Partial<InsertRe
 // ============ DASHBOARD STATISTICS ============
 export async function getDashboardStats() {
   const db = await getDb();
-  if (!db) return null;
   
-  const [poStats] = await db.select({
+  // Local stats
+  const localPoStatsPromise = db ? db.select({
     total: sql<number>`COUNT(*)`,
     atRisk: sql<number>`SUM(CASE WHEN riskLevel IN ('red', 'yellow') THEN 1 ELSE 0 END)`,
     delayed: sql<number>`SUM(CASE WHEN status = 'delayed' OR delayProbability > 50 THEN 1 ELSE 0 END)`
-  }).from(purchaseOrders).where(sql`status NOT IN ('delivered', 'cancelled')`);
+  }).from(purchaseOrders).where(sql`status NOT IN ('delivered', 'cancelled')`) : Promise.resolve([{total:0, atRisk:0, delayed:0} as any]);
   
-  const [inventoryStats] = await db.select({
+  const localInventoryStatsPromise = db ? db.select({
     total: sql<number>`COUNT(*)`,
     lowStock: sql<number>`SUM(CASE WHEN stockoutRisk IN ('high', 'critical') THEN 1 ELSE 0 END)`,
     criticalItems: sql<number>`SUM(CASE WHEN daysOfSupply <= 7 THEN 1 ELSE 0 END)`
-  }).from(inventoryItems);
+  }).from(inventoryItems) : Promise.resolve([{total:0, lowStock:0, criticalItems:0} as any]);
   
-  const [alertStats] = await db.select({
+  const localAlertStatsPromise = db ? db.select({
     total: sql<number>`COUNT(*)`,
     unread: sql<number>`SUM(CASE WHEN isRead = 0 THEN 1 ELSE 0 END)`,
     critical: sql<number>`SUM(CASE WHEN severity = 'critical' AND isResolved = 0 THEN 1 ELSE 0 END)`
-  }).from(alerts);
+  }).from(alerts) : Promise.resolve([{total:0, unread:0, critical:0} as any]);
   
-  const [supplierStats] = await db.select({
+  const localSupplierStatsPromise = db ? db.select({
     total: sql<number>`COUNT(*)`,
     active: sql<number>`SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END)`,
     avgReliability: sql<number>`AVG(reliabilityScore)`
-  }).from(suppliers);
+  }).from(suppliers) : Promise.resolve([{total:0, active:0, avgReliability:0} as any]);
+  
+  // JDE dynamic alerts (matching routers.ts alert.list logic)
+  const jdeDataPromises = [
+    jdeDb.getJDEInventoryItems(),
+    jdeDb.getJDEPurchaseOrders(),
+    jdeDb.getJDESalesOrders(),
+    jdeDb.getJDEShipments(),
+    jdeDb.getJDESuppliers()
+  ];
+  
+  const [jdeInventory, jdePOs, jdeSOs, jdeShipments, jdeSuppliers] = await Promise.all(jdeDataPromises);
+  
+  // Generate JDE alerts counts (same logic as alert.list)
+  const inventoryCritical = jdeInventory.filter(item => item.stockoutRisk === "critical").length;
+  const inventoryWarning = jdeInventory.filter(item => item.stockoutRisk === "high").length;
+  
+  const poCritical = jdePOs.filter(po => po.riskLevel === "red").length;
+  const poWarning = jdePOs.filter(po => po.riskLevel === "yellow").length;
+  
+  const soCritical = jdeSOs.filter(so => so.fulfillmentRisk === "red").length;
+  
+  const shipmentCritical = jdeShipments.filter(s => s.riskLevel === "red" || s.riskLevel === "yellow").length; // Note: temp alert handled in full list
+  const shipmentTempCritical = jdeShipments.filter(s => s.temperature !== undefined && Math.abs(s.temperature || 0 - 20) > 5).length; // approx temp alert
+  
+  const supplierCritical = jdeSuppliers.filter(s => 
+    s.type !== 'V' || (s.reliabilityScore || 0) < 50 || (s.qualityScore || 0) < 50
+  ).length;
+  const supplierWarning = jdeSuppliers.filter(s => 
+    (s.reliabilityScore || 0) < 70 || (s.qualityScore || 0) < 70
+  ).length - supplierCritical;
+  
+  // Total generated JDE alerts: all warnings + criticals
+  const jdeTotalAlerts = inventoryCritical + inventoryWarning + poCritical + poWarning + soCritical + shipmentCritical + shipmentTempCritical + supplierCritical + supplierWarning;
+  
+  // Critical = all "critical" severity
+  const jdeCriticalAlerts = inventoryCritical + poCritical + soCritical + shipmentCritical + shipmentTempCritical + supplierCritical;
+  
+  // Unread = all JDE alerts (none marked read in resolutions table for dashboard)
+  const jdeUnreadAlerts = jdeTotalAlerts; // Simplified: all dynamic are "unread" for dashboard
+  
+  // Combine local + JDE
+  const [poStats, inventoryStats, localAlertStats, supplierStats] = await Promise.all([
+    localPoStatsPromise, localInventoryStatsPromise, localAlertStatsPromise, localSupplierStatsPromise
+  ]);
+  
+  const combinedAlerts = {
+    total: Number(localAlertStats[0]?.total || 0) + jdeTotalAlerts,
+    unread: Number(localAlertStats[0]?.unread || 0) + jdeUnreadAlerts,
+    critical: Number(localAlertStats[0]?.critical || 0) + jdeCriticalAlerts
+  };
   
   // MySQL returns aggregates as strings; coerce to numbers for the client
   const toNum = (obj: Record<string, any>) =>
     Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, Number(v)]));
 
   return {
-    purchaseOrders: toNum(poStats),
-    inventory: toNum(inventoryStats),
-    alerts: toNum(alertStats),
-    suppliers: toNum(supplierStats),
+    purchaseOrders: toNum(poStats[0] || {total:0, atRisk:0, delayed:0}),
+    inventory: toNum(inventoryStats[0] || {total:0, lowStock:0, criticalItems:0}),
+    alerts: combinedAlerts,
+    suppliers: toNum(supplierStats[0] || {total:0, active:0, avgReliability:0}),
   };
 }

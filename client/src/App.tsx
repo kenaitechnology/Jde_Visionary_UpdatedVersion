@@ -14,6 +14,7 @@ import Alerts from "./pages/Alerts";
 import Analytics from "./pages/Analytics";
 import Assistant from "./pages/Assistant";
 import Settings from "./pages/Settings";
+import ExecutiveReport from "./pages/ExecutiveReport";
 
 function Router() {
   return (
@@ -28,6 +29,7 @@ function Router() {
       <Route path="/analytics" component={Analytics} />
       <Route path="/assistant" component={Assistant} />
       <Route path="/settings" component={Settings} />
+      <Route path="/executive-report" component={ExecutiveReport} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
