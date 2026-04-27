@@ -21,7 +21,7 @@ export default function ExecutiveReport() {
     // toast.loading("Fetching executive summary...");
     
     try {
-      const response = await fetch("https://jde-visionary-ai-backend.onrender.com/api/executive-summary");
+      const response = await fetch("https://jde-visionary-ai-backend-87wn.onrender.com/api/executive-summary");
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }

@@ -182,7 +182,7 @@ export default function Assistant() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://jde-visionary-ai-backend.onrender.com/api/ask', {
+      const response = await fetch('https://jde-visionary-ai-backend-87wn.onrender.com/api/ask', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
