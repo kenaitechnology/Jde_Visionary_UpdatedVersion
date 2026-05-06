@@ -232,7 +232,7 @@ const markAlertResolved = useCallback((id: number, switchToResolved = false) => 
     effectiveIsResolved: getEffectiveIsResolved(alert, resolvedAlerts),
   })) || [];
 
-  const unreadCount = alerts.filter((a) => !getEffectiveIsRead(a, readAlerts) && !getEffectiveIsResolved(a, resolvedAlerts)).length;
+  const unresolvedCount = alerts.filter((a) => !getEffectiveIsResolved(a, resolvedAlerts)).length;
 
   const handleResolve = (alert: any) => {
     setSelectedAlert(alert);
@@ -323,8 +323,8 @@ const markAlertResolved = useCallback((id: number, switchToResolved = false) => 
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Read</p>
-                  <p className="text-2xl font-bold text-destructive">{unreadCount}</p>
+                  <p className="text-sm text-muted-foreground">Unresolved</p>
+                  <p className="text-2xl font-bold text-destructive">{unresolvedCount}</p>
                 </div>
                 <BellOff className="h-8 w-8" />
               </div>
