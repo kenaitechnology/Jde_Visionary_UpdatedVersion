@@ -1166,7 +1166,90 @@ const aiRouter = router({
       const prediction = JSON.parse(typeof content === 'string' ? content : '{}');
       return prediction;
     }),
-  
+
+  predictDelayFromJDE: publicProcedure
+    .input(z.object({
+      poNumber: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const po = await jdeDb.getJDEPurchaseOrderById(input.poNumber);
+      if (!po) throw new TRPCError({ code: 'NOT_FOUND', message: 'JDE purchase order not found' });
+
+      const fallback = {
+        delayProbability: Number(po.delayProbability ?? 0),
+        estimatedDelayDays:
+          Number(po.delayProbability ?? 0) >= 70 ? 7 : Number(po.delayProbability ?? 0) >= 40 ? 4 : 1,
+        riskFactors: [
+          `JDE risk level is ${po.riskLevel}`,
+          po.requestedDeliveryDate ? `Requested delivery: ${po.requestedDeliveryDate}` : 'Requested delivery: N/A',
+          `Current PO status: ${po.status}`,
+        ],
+        mitigationActions: [
+          'Confirm supplier production readiness and update shipment ETA',
+          'Escalate potential delay to procurement and track exceptions',
+          'Review alternative sourcing options if lead time variance is unacceptable',
+        ],
+      };
+
+      try {
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: `You are a supply chain AI that predicts delivery delays for JDE purchase orders.
+
+Predict:
+1) Probability of delay (0-100)
+2) Estimated delay in days (0-30)
+3) 3-5 key risk factors
+4) 3 mitigation actions to reduce the likelihood or impact of delay
+
+Use the provided PO fields. Keep output strictly in the required JSON schema.`,
+            },
+            {
+              role: "user",
+              content: `JDE Purchase Order (raw): ${JSON.stringify(po)}`,
+            },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "delay_prediction",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  delayProbability: { type: "number" },
+                  estimatedDelayDays: { type: "number" },
+                  riskFactors: { type: "array", items: { type: "string" } },
+                  mitigationActions: { type: "array", items: { type: "string" } },
+                },
+                required: ["delayProbability", "estimatedDelayDays", "riskFactors", "mitigationActions"],
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+
+        const content = response.choices[0]?.message?.content;
+        const parsed = JSON.parse(typeof content === 'string' ? content : '{}');
+
+        return {
+          delayProbability: Number(parsed.delayProbability ?? fallback.delayProbability),
+          estimatedDelayDays: Number(parsed.estimatedDelayDays ?? fallback.estimatedDelayDays),
+          riskFactors: Array.isArray(parsed.riskFactors) && parsed.riskFactors.length
+            ? parsed.riskFactors
+            : fallback.riskFactors,
+          mitigationActions:
+            Array.isArray(parsed.mitigationActions) && parsed.mitigationActions.length
+              ? parsed.mitigationActions
+              : fallback.mitigationActions,
+        };
+      } catch {
+        return fallback;
+      }
+    }),
+
   recommendSuppliers: protectedProcedure
     .input(z.object({
       itemCategory: z.string(),
@@ -1445,41 +1528,43 @@ const remediationRouter = router({
   
   emailSupplier: protectedProcedure
     .input(z.object({
-      supplierId: z.number(),
+      supplierId: z.number().optional(),
+      recipientEmail: z.string().email().optional(),
       subject: z.string(),
       message: z.string(),
       relatedEntityType: z.string(),
       relatedEntityId: z.number(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const supplier = await db.getSupplierById(input.supplierId);
-      if (!supplier) throw new TRPCError({ code: 'NOT_FOUND', message: 'Supplier not found' });
-      
+      const supplier = input.supplierId ? await db.getSupplierById(input.supplierId) : undefined;
+      const recipientEmail = input.recipientEmail || supplier?.email || 'erplab@kenai-us.com';
+      const recipientName = supplier?.name || recipientEmail;
+
       // Create remediation action record
       const actionId = await db.createRemediationAction({
         actionType: 'email_supplier',
         relatedEntityType: input.relatedEntityType,
         relatedEntityId: input.relatedEntityId,
-        description: `Email sent to ${supplier.name}: ${input.subject}`,
+        description: `Email sent to ${recipientName}: ${input.subject}`,
         triggeredBy: ctx.user.id,
       });
-      
+
       // Simulate sending email (in production, integrate with email service)
       await new Promise(resolve => setTimeout(resolve, 500));
-      
+
       // Notify owner about the action
       await notifyOwner({
-        title: `Supplier Email Sent: ${supplier.name}`,
-        content: `Subject: ${input.subject}\n\nMessage: ${input.message}`,
+        title: `Supplier Email Sent: ${recipientName}`,
+        content: `To: ${recipientEmail}\nSubject: ${input.subject}\n\nMessage: ${input.message}`,
       });
-      
+
       // Update the action as completed
       await db.updateRemediationAction(actionId, {
         status: 'completed',
-        result: `Email sent to ${supplier.email}`,
+        result: `Email sent to ${recipientEmail}`,
         completedAt: new Date(),
       });
-      
+
       return { success: true, actionId };
     }),
   

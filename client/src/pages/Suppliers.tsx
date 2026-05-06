@@ -43,7 +43,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 function StatusBadge({ status }: { status: string }) {
@@ -180,32 +180,34 @@ export default function Suppliers() {
     },
   });
 
-  const categories = Array.from(new Set(suppliers?.map((s: any) => s.category) || []));
+  const categories = Array.from(new Set(suppliers?.map((s: any) => s.category || 'Vendor') || []));
 
-  const filteredSuppliers = suppliers?.filter((supplier: any) => {
-    // Apply search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      const matchesSearch = (
-        supplier.name.toLowerCase().includes(query) ||
-        supplier.supplierCode?.toLowerCase().includes(query) ||
-        supplier.country?.toLowerCase().includes(query)
-      );
-      if (!matchesSearch) return false;
-    }
+  const filteredSuppliers = useMemo(() => {
+    return suppliers.filter((supplier: any) => {
+      const query = searchQuery.trim().toLowerCase();
 
-    // Apply status filter
-    if (statusFilter !== "all" && supplier.status !== statusFilter) {
-      return false;
-    }
+      if (query) {
+        const matchesSearch =
+          supplier.name.toLowerCase().includes(query) ||
+          supplier.supplierCode?.toLowerCase().includes(query) ||
+          supplier.country?.toLowerCase().includes(query);
 
-    // Apply category filter
-    if (categoryFilter !== "all" && supplier.category !== categoryFilter) {
-      return false;
-    }
+        if (!matchesSearch) {
+          return false;
+        }
+      }
 
-    return true;
-  });
+      if (statusFilter !== 'all' && supplier.status !== statusFilter) {
+        return false;
+      }
+
+      if (categoryFilter !== 'all' && supplier.category !== categoryFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [suppliers, searchQuery, statusFilter, categoryFilter]);
 
   const handleFindAlternatives = (supplier: any) => {
     setSelectedSupplier(supplier);
@@ -348,15 +350,19 @@ export default function Suppliers() {
               <Skeleton key={i} className="h-80" />
             ))}
           </div>
-        ) : (
+        ) : filteredSuppliers.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredSuppliers?.map((supplier: any) => (
+            {filteredSuppliers.map((supplier: any) => (
               <SupplierCard
                 key={supplier.id}
                 supplier={supplier}
                 onFindAlternatives={() => handleFindAlternatives(supplier)}
               />
             ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-muted p-12 text-center text-sm text-muted-foreground">
+            No suppliers match your search and filter criteria.
           </div>
         )}
       </div>

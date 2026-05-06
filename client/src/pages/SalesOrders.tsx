@@ -33,12 +33,25 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-function RiskBadge({ level }: { level: string }) {
+function RiskBadge({ level, priority }: { level: string; priority: string }) {
+  let normalizedPriority = priority?.toLowerCase();
+  if (normalizedPriority === 'med') normalizedPriority = 'medium';
+
+  const effectiveLevel = (() => {
+    switch (normalizedPriority) {
+      case 'low': return 'green';
+      case 'medium': return 'yellow';
+      case 'high': return 'red';
+      case 'critical': return 'red';
+      default: return level || 'green';
+    }
+  })();
+
   const config = {
-    green: { label: "On Track", className: "risk-badge-green" },
-    yellow: { label: "At Risk", className: "risk-badge-yellow" },
-    red: { label: "Critical", className: "risk-badge-red" },
-  }[level] || { label: level, className: "risk-badge-green" };
+    green: { label: "Low Risk", className: "risk-badge-green" },
+    yellow: { label: "Med Risk", className: "risk-badge-yellow" },
+    red: { label: "High Risk", className: "risk-badge-red" },
+  }[effectiveLevel] || { label: effectiveLevel, className: "risk-badge-green" };
 
   return <span className={`risk-badge ${config.className}`}>{config.label}</span>;
 }
@@ -50,6 +63,8 @@ function StatusBadge({ status, risk }: { status: string; risk?: string }) {
     "540": { label: "Print Pick", variant: "outline" },
     "560": { label: "Ship Confirmation", variant: "default" },
     "580": { label: "Print Invoices", variant: "default" },
+    "581": { label: "Print Interbranch Invoice", variant: "outline" },
+    "582": { label: "Print Delivery Notes", variant: "outline" },
     "600": { label: "Invoice Journal", variant: "secondary" },
     "620": { label: "Sales Update", variant: "secondary" },
     "999": { label: "Complete - Ready to Purge", variant: "destructive" },
@@ -82,7 +97,31 @@ function StatusBadge({ status, risk }: { status: string; risk?: string }) {
   );
 }
 
-function PriorityBadge({ priority }: { priority: string }) {
+function PriorityBadge({ priority, status }: { priority: string; status: string }) {
+  const statusConfig: Record<string, string> = {
+    "520": "Enter Order/Receive EDI",
+    "540": "Print Pick",
+    "560": "Ship Confirmation",
+    "580": "Print Invoices",
+    "581": "Print Interbranch Invoice",
+    "582": "Print Delivery Notes",
+    "600": "Invoice Journal",
+    "620": "Sales Update",
+    "999": "Complete - Ready to Purge",
+    "Pending": "Pending",
+    "Unknown": "Unknown",
+  };
+
+  const statusLabel = statusConfig[status] || status;
+  let effectivePriority = priority.toLowerCase();
+
+  // Normalize common variations
+  if (effectivePriority === 'med') effectivePriority = 'medium';
+
+  if (statusLabel === "Print Interbranch Invoice" || statusLabel === "Print Delivery Notes") {
+    effectivePriority = "low";
+  }
+
   const config: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
     low: { label: "Low", variant: "outline" },
     medium: { label: "Medium", variant: "secondary" },
@@ -96,7 +135,7 @@ function PriorityBadge({ priority }: { priority: string }) {
     "5": { label: "Low", variant: "outline" },
   };
 
-  const priorityConfig = config[priority] || { label: priority, variant: "secondary" as const };
+  const priorityConfig = config[effectivePriority] || { label: effectivePriority, variant: "secondary" as const };
 
   return (
     <Badge variant={priorityConfig.variant} className="capitalize">
@@ -129,8 +168,8 @@ export default function SalesOrders() {
   });
 
   const totalValue = (filteredOrders?.reduce((acc: number, so: any) => acc + Number(so.totalAmount), 0) || 0);
-  const atRiskOrders = filteredOrders?.filter((so: any) => so.fulfillmentRisk === "yellow" || so.fulfillmentRisk === "red");
-  const highPriorityOrders = filteredOrders?.filter((so: any) => so.priority === "high" || so.priority === "critical");
+  const atRiskOrders = filteredOrders?.filter((so: any) => so.priority?.toLowerCase() === "high" || so.priority?.toLowerCase() === "critical");
+  const highPriorityOrders = filteredOrders?.filter((so: any) => so.priority?.toLowerCase() === "high" || so.priority?.toLowerCase() === "critical");
 
   return (
     <DashboardLayout>
@@ -292,10 +331,10 @@ export default function SalesOrders() {
                         <StatusBadge status={so.status} risk={so.fulfillmentRisk} />
                       </TableCell>
                       <TableCell>
-                        <PriorityBadge priority={so.priority} />
+                        <PriorityBadge priority={so.priority} status={so.status} />
                       </TableCell>
                       <TableCell>
-                        <RiskBadge level={so.fulfillmentRisk} />
+                        <RiskBadge level={so.fulfillmentRisk} priority={so.priority} />
                       </TableCell>
                     </TableRow>
                   ))}

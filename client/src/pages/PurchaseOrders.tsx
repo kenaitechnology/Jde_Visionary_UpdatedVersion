@@ -143,14 +143,25 @@ export default function PurchaseOrders() {
     },
   });
 
+  const predictDelayFromJDE = trpc.ai.predictDelayFromJDE.useMutation({
+    onSuccess: (data) => {
+      setPrediction(data);
+    },
+    onError: () => {
+      toast.error("Failed to generate prediction");
+    },
+  });
+
+
+
   const emailSupplier = trpc.remediation.emailSupplier.useMutation({
     onSuccess: () => {
       toast.success("Email sent to supplier");
       setShowRemediateDialog(false);
       setEmailMessage("");
     },
-    onError: () => {
-      toast.error("Failed to send email");
+    onError: (error) => {
+      toast.error(`Failed to send email: ${error?.message || 'Unknown error'}`);
     },
   });
 
@@ -167,14 +178,23 @@ export default function PurchaseOrders() {
     setSelectedPO(po);
     setShowPredictionDialog(true);
     setPrediction(null);
-    // For JDE data, we use the poNumber instead of id
-    if (po.id) {
-      predictDelay.mutate({ purchaseOrderId: po.id });
-    } else {
-      toast.error("Cannot generate prediction: No local ID available for this JDE order");
-      setShowPredictionDialog(false);
-    }
+
+  // Prefer local DB prediction when a local id exists.
+  if (po.id) {
+    predictDelay.mutate({ purchaseOrderId: po.id });
+    return;
+  }
+
+  // For JDE table rows, use poNumber.
+  if (po.poNumber) {
+    predictDelayFromJDE.mutate({ poNumber: po.poNumber });
+    return;
+  }
+
+  toast.error("Cannot generate prediction: Missing PO number");
+  setShowPredictionDialog(false);
   };
+
 
   const handleRemediate = (po: any) => {
     setSelectedPO(po);
@@ -186,18 +206,21 @@ export default function PurchaseOrders() {
 
   const handleSendEmail = () => {
     if (!selectedPO) return;
-    // For JDE orders, we need supplier info - using supplierName from JDE
-    if (!selectedPO.id) {
-      toast.error("Cannot send email: No local supplier ID available for this JDE order");
-      return;
-    }
-    emailSupplier.mutate({
-      supplierId: selectedPO.supplierId,
+
+    const recipientEmail = 'erplab@kenai-us.com';
+    const input: any = {
       subject: `Urgent: Status Update Required for PO ${selectedPO.poNumber}`,
       message: emailMessage,
       relatedEntityType: "purchase_order",
-      relatedEntityId: selectedPO.id,
-    });
+      relatedEntityId: selectedPO.id ?? 0,
+      recipientEmail,
+    };
+
+    if (selectedPO.id && selectedPO.supplierId) {
+      input.supplierId = selectedPO.supplierId;
+    }
+
+    emailSupplier.mutate(input);
   };
 
   return (
@@ -367,7 +390,8 @@ export default function PurchaseOrders() {
             </DialogDescription>
           </DialogHeader>
 
-          {predictDelay.isPending ? (
+          {predictDelay.isPending || predictDelayFromJDE.isPending ? (
+
             <div className="space-y-4 py-4">
               <Skeleton className="h-4 w-3/4" />
               <Skeleton className="h-4 w-1/2" />
@@ -426,10 +450,11 @@ export default function PurchaseOrders() {
             </div>
           ) : (
             <div className="py-4 text-center text-muted-foreground">
-              <p>AI prediction is only available for local purchase orders.</p>
-              <p className="text-sm mt-2">This JDE order does not have a local ID for AI analysis.</p>
+              <p>AI prediction will appear here.</p>
+              <p className="text-sm mt-2">If prediction fails, deterministic JDE risk-based values are used.</p>
             </div>
           )}
+
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPredictionDialog(false)}>
@@ -452,7 +477,7 @@ export default function PurchaseOrders() {
               Email Supplier
             </DialogTitle>
             <DialogDescription>
-              Send an automated email to {selectedPO?.supplierName || "Supplier"}
+              Send an automated email to erplab@kenai-us.com
             </DialogDescription>
           </DialogHeader>
 
