@@ -147,7 +147,7 @@ function transformJDESupplier(jdeSupplier: any) {
     id: jdeSupplier.id,
     supplierCode: jdeSupplier.id, // Use ID as code
     name: jdeSupplier.name,
-    status: jdeSupplier.type === 'V' ? 'active' : 'inactive', // V = Vendor = Active
+    status: jdeSupplier.type?.includes('V') ? 'active' : 'inactive', // V/VEND = Vendor = Active
     country: jdeSupplier.country || 'N/A',
     leadTimeDays: jdeSupplier.leadDays || 0,
   reliabilityScore: jdeSupplier.reliabilityScore || 0,
@@ -183,13 +183,28 @@ export default function Suppliers() {
   const categories = Array.from(new Set(suppliers?.map((s: any) => s.category) || []));
 
   const filteredSuppliers = suppliers?.filter((supplier: any) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      supplier.name.toLowerCase().includes(query) ||
-      supplier.supplierCode?.toLowerCase().includes(query) ||
-      supplier.country?.toLowerCase().includes(query)
-    );
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesSearch = (
+        supplier.name.toLowerCase().includes(query) ||
+        supplier.supplierCode?.toLowerCase().includes(query) ||
+        supplier.country?.toLowerCase().includes(query)
+      );
+      if (!matchesSearch) return false;
+    }
+
+    // Apply status filter
+    if (statusFilter !== "all" && supplier.status !== statusFilter) {
+      return false;
+    }
+
+    // Apply category filter
+    if (categoryFilter !== "all" && supplier.category !== categoryFilter) {
+      return false;
+    }
+
+    return true;
   });
 
   const handleFindAlternatives = (supplier: any) => {
@@ -377,7 +392,6 @@ export default function Suppliers() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between mb-2">
                           <p className="font-semibold">{rec.supplierName}</p>
-                          <Badge variant="outline">{rec.score.toFixed(0)} pts</Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{rec.justification}</p>
                       </div>

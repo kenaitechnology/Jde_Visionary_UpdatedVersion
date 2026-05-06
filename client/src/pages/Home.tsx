@@ -438,7 +438,7 @@ export default function Home() {
                 title="Active Suppliers"
                 value={stats?.suppliers?.total || 0}
 
-                subtitle="Inactive vendors"
+                subtitle="Active vendors"
 
                 icon={Users}
                 onClick={() => setLocation("/suppliers")}
