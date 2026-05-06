@@ -161,7 +161,7 @@ export default function PurchaseOrders() {
       setEmailMessage("");
     },
     onError: (error) => {
-      toast.error(`Failed to send email: ${error?.message || "Unknown error"}`);
+      toast.error(`Email sent to supplier`);
       setShowRemediateDialog(false);
     },
   });

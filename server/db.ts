@@ -519,21 +519,21 @@ export async function getDashboardStats() {
   const [jdeInventory, jdePOs, jdeSOs, jdeShipments, jdeSuppliers] = await Promise.all(jdeDataPromises);
   
   // Generate JDE alerts counts (same logic as alert.list)
-  const inventoryCritical = jdeInventory.filter(item => item.stockoutRisk === "critical").length;
-  const inventoryWarning = jdeInventory.filter(item => item.stockoutRisk === "high").length;
+  const inventoryCritical = jdeInventory.filter((item: any) => item.stockoutRisk === "critical").length;
+  const inventoryWarning = jdeInventory.filter((item: any) => item.stockoutRisk === "high").length;
   
-  const poCritical = jdePOs.filter(po => po.riskLevel === "red").length;
-  const poWarning = jdePOs.filter(po => po.riskLevel === "yellow").length;
+  const poCritical = jdePOs.filter((po: any) => po.riskLevel === "red").length;
+  const poWarning = jdePOs.filter((po: any) => po.riskLevel === "yellow").length;
   
-  const soCritical = jdeSOs.filter(so => so.fulfillmentRisk === "red").length;
+  const soCritical = jdeSOs.filter((so: any) => so.fulfillmentRisk === "red").length;
   
-  const shipmentCritical = jdeShipments.filter(s => s.riskLevel === "red" || s.riskLevel === "yellow").length; // Note: temp alert handled in full list
-  const shipmentTempCritical = jdeShipments.filter(s => s.temperature !== undefined && Math.abs(s.temperature || 0 - 20) > 5).length; // approx temp alert
+  const shipmentCritical = jdeShipments.filter((s: any) => s.riskLevel === "red" || s.riskLevel === "yellow").length; // Note: temp alert handled in full list
+  const shipmentTempCritical = jdeShipments.filter((s: any) => s.temperature !== undefined && Math.abs(s.temperature || 0 - 20) > 5).length; // approx temp alert
   
-  const supplierCritical = jdeSuppliers.filter(s => 
+  const supplierCritical = jdeSuppliers.filter((s: any) => 
     s.type !== 'V' || (s.reliabilityScore || 0) < 50 || (s.qualityScore || 0) < 50
   ).length;
-  const supplierWarning = jdeSuppliers.filter(s => 
+  const supplierWarning = jdeSuppliers.filter((s: any) => 
     (s.reliabilityScore || 0) < 70 || (s.qualityScore || 0) < 70
   ).length - supplierCritical;
   
