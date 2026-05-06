@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
 import { formatDistanceToNow } from "date-fns";
@@ -135,12 +135,6 @@ function AlertCard({ alert, onMarkRead, onResolve, readAlerts, resolvedAlerts }:
             </div>
             <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{alert.message}</p>
             <div className="flex flex-wrap items-center gap-2">
-              {!effectiveIsRead && (
-                <Button variant="outline" size="sm" onClick={onMarkRead} className="h-8 px-3">
-                  <Check className="mr-1.5 h-3.5 w-3.5" />
-                  Read
-                </Button>
-              )}
               {!effectiveIsResolved && (
                 <Button variant="default" size="sm" onClick={onResolve} className="h-8 px-3">
                   <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
@@ -159,7 +153,8 @@ export default function Alerts() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [severityFilter, setSeverityFilter] = useState<string>("all");
-  const [activeTab, setActiveTab] = useState("unread");
+  const [viewResolved, setViewResolved] = useState<boolean>(false);
+
   const [selectedAlert, setSelectedAlert] = useState<any>(null);
   const [showResolveDialog, setShowResolveDialog] = useState(false);
   const [actionTaken, setActionTaken] = useState("");
@@ -213,7 +208,7 @@ const markAlertResolved = useCallback((id: number, switchToResolved = false) => 
     setResolvedAlerts(newResolved);
 
     if (switchToResolved) {
-      setActiveTab("resolved");
+      setViewResolved(true);
     }
 
     saveAlertsState();
@@ -227,8 +222,6 @@ const markAlertResolved = useCallback((id: number, switchToResolved = false) => 
   const { data: rawAlerts, isLoading, refetch } = trpc.alert.list.useQuery({
     type: typeFilter !== "all" ? typeFilter : undefined,
     severity: severityFilter !== "all" ? severityFilter : undefined,
-    isRead: activeTab === "unread" ? false : undefined,
-    isResolved: activeTab === "resolved" ? true : activeTab === "unread" ? false : undefined,
   }, {
     refetchOnWindowFocus: false,
   });
@@ -249,30 +242,39 @@ const markAlertResolved = useCallback((id: number, switchToResolved = false) => 
   const submitResolve = useCallback(() => {
     if (!selectedAlert || !actionTaken.trim()) return;
 
-    // Update local state for immediate UI feedback (client-side only)
-    const newResolved = new Set(resolvedAlerts);
-    newResolved.add(selectedAlert.id);
-    setResolvedAlerts(newResolved);
+    const id = selectedAlert.id;
+    setResolvedAlerts((prev) => {
+      const newResolved = new Set(prev);
+      newResolved.add(id);
+      return newResolved;
+    });
 
-    setActiveTab("resolved");
+    setViewResolved(true);
     setShowResolveDialog(false);
     setActionTaken("");
-    saveAlertsState();
+
+    // Persist using latest state via direct storage write to avoid stale closure
+    try {
+      const stored = localStorage.getItem("jde-visionary-alerts-resolved");
+      const prev = stored ? new Set(JSON.parse(stored)) : new Set();
+      prev.add(id);
+      localStorage.setItem("jde-visionary-alerts-resolved", JSON.stringify(Array.from(prev)));
+    } catch {}
+
     toast.success(`Marked as resolved: ${actionTaken.trim()} (client-side)`);
-  }, [selectedAlert, actionTaken, resolvedAlerts, saveAlertsState]);
+  }, [selectedAlert, actionTaken]);
 
   const filteredAlerts = alerts.filter((alert) => {
-    const effectiveRead = getEffectiveIsRead(alert, readAlerts);
     const effectiveResolved = getEffectiveIsResolved(alert, resolvedAlerts);
-    
-    if (activeTab === "unread" && (effectiveRead || effectiveResolved)) return false;
-    if (activeTab === "resolved" && !effectiveResolved) return false;
-    
+
+    // emulate old "Resolved" tab behavior
+    if (viewResolved && !effectiveResolved) return false;
+    if (!viewResolved && effectiveResolved) return false;
+
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return alert.title.toLowerCase().includes(query) || alert.message.toLowerCase().includes(query);
     }
-    
     return true;
   }).sort((a, b) => {
     const aResolved = getEffectiveIsResolved(a, resolvedAlerts);
@@ -321,7 +323,7 @@ const markAlertResolved = useCallback((id: number, switchToResolved = false) => 
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Unread</p>
+                  <p className="text-sm text-muted-foreground">Read</p>
                   <p className="text-2xl font-bold text-destructive">{unreadCount}</p>
                 </div>
                 <BellOff className="h-8 w-8" />
@@ -354,92 +356,92 @@ const markAlertResolved = useCallback((id: number, switchToResolved = false) => 
           </Card>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="unread" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              Unread ({unreadCount})
-            </TabsTrigger>
-            <TabsTrigger value="all" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              All ({rawAlerts?.length || 0})
-            </TabsTrigger>
-            <TabsTrigger value="resolved" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              Resolved ({alerts.filter((a) => getEffectiveIsResolved(a, resolvedAlerts)).length})
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value={activeTab} className="mt-6">
-            <Card>
-              <CardContent className="pt-6 pb-4">
-                <div className="flex flex-col lg:flex-row gap-3">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      placeholder="Search alerts..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10 h-10"
-                    />
-                  </div>
-                  <div className="flex gap-2 lg:w-auto w-full">
-                    <Select value={typeFilter} onValueChange={setTypeFilter}>
-                      <SelectTrigger className="h-10 w-[140px]">
-                        <SelectValue placeholder="Type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Types</SelectItem>
-                        <SelectItem value="stockout_warning">Stockout</SelectItem>
-                        <SelectItem value="delivery_delay">Delivery</SelectItem>
-                        <SelectItem value="supplier_issue">Supplier</SelectItem>
-                        <SelectItem value="temperature_alert">Temp</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Select value={severityFilter} onValueChange={setSeverityFilter}>
-                      <SelectTrigger className="h-10 w-[140px]">
-                        <SelectValue placeholder="Severity" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="info">Info</SelectItem>
-                        <SelectItem value="warning">Warning</SelectItem>
-                        <SelectItem value="critical">Critical</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+        <div className="flex gap-2 mb-4">
+          <Button
+            variant={!viewResolved ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewResolved(false)}
+          >
+            All Alerts
+          </Button>
+          <Button
+            variant={viewResolved ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewResolved(true)}
+          >
+            Resolved
+          </Button>
+        </div>
 
-            {isLoading ? (
-              <div className="space-y-4 py-8">
-                {[1,2,3,4].map((i) => (
-                  <Skeleton key={i} className="h-32 rounded-lg" />
-                ))}
+        <Card>
+          <CardContent className="pt-6 pb-4">
+            <div className="flex flex-col lg:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search alerts..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 h-10"
+                />
               </div>
-            ) : filteredAlerts.length > 0 ? (
-              <div className="space-y-4 py-2">
-                {filteredAlerts.map((alert) => (
-                  <AlertCard
-                    key={alert.id}
-                    alert={alert}
-                    onMarkRead={() => markAlertRead(alert.id)}
-                    onResolve={() => handleResolve(alert)}
-                    readAlerts={readAlerts}
-                    resolvedAlerts={resolvedAlerts}
-                  />
-                ))}
+              <div className="flex gap-2 lg:w-auto w-full">
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="h-10 w-[140px]">
+                    <SelectValue placeholder="Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="stockout_warning">Stockout</SelectItem>
+                    <SelectItem value="delivery_delay">Delivery</SelectItem>
+                    <SelectItem value="supplier_issue">Supplier</SelectItem>
+                    <SelectItem value="temperature_alert">Temp</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={severityFilter} onValueChange={setSeverityFilter}>
+                  <SelectTrigger className="h-10 w-[140px]">
+                    <SelectValue placeholder="Severity" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            ) : (
-              <Card className="mt-8">
-                <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-                  <Bell className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-semibold mb-2">No alerts match filters</h3>
-                  <p className="text-sm text-muted-foreground max-w-md">
-                    {activeTab === "resolved" ? "No resolved alerts" : "No matching alerts found"}
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
+            </div>
+          </CardContent>
+        </Card>
+
+        {isLoading ? (
+          <div className="space-y-4 py-8">
+            {[1,2,3,4].map((i) => (
+              <Skeleton key={i} className="h-32 rounded-lg" />
+            ))}
+          </div>
+        ) : filteredAlerts.length > 0 ? (
+          <div className="space-y-4 py-2">
+            {filteredAlerts.map((alert) => (
+              <AlertCard
+                key={alert.id}
+                alert={alert}
+                onMarkRead={() => markAlertRead(alert.id)}
+                onResolve={() => handleResolve(alert)}
+                readAlerts={readAlerts}
+                resolvedAlerts={resolvedAlerts}
+              />
+            ))}
+          </div>
+        ) : (
+          <Card className="mt-8">
+            <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+              <Bell className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="text-lg font-semibold mb-2">No alerts match filters</h3>
+              <p className="text-sm text-muted-foreground max-w-md">No matching alerts found</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       <Dialog open={showResolveDialog} onOpenChange={setShowResolveDialog}>
