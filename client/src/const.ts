@@ -7,8 +7,12 @@ export const getLoginUrl = () => {
   const redirectUri = `${window.location.origin}/api/oauth/callback`;
   const state = btoa(redirectUri);
 
-  // Local dev fallback when no external OAuth portal is configured.
-  if (!oauthPortalUrl || oauthPortalUrl === window.location.origin) {
+  // Allow forcing dev login in production for testing.
+  const allowDevLogin = import.meta.env.VITE_ALLOW_DEV_LOGIN === "true";
+
+  // Use local dev login when no external OAuth portal is configured,
+  // or when explicitly allowed.
+  if (!oauthPortalUrl || oauthPortalUrl === window.location.origin || allowDevLogin) {
     return "/api/dev/login";
   }
 
